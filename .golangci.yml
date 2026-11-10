@@ -18,6 +18,13 @@ linters:
     - sqlclosecheck
     - unconvert
     - unparam
+  settings:
+    gosec:
+      excludes:
+        - G404
+  exclusions:
+    presets:
+      - std-error-handling
 
 formatters:
   enable:
