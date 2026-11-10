@@ -213,6 +213,14 @@ func TestNewTransaction_InputValidation(t *testing.T) {
 			wantErr:   domain.ErrDescriptionTooLong,
 			wantField: "description",
 		},
+		{
+			name: "idempotency key over the maximum length",
+			mutate: func(p *domain.NewTransactionParams) {
+				p.IdempotencyKey = strings.Repeat("k", domain.MaxIdempotencyKeyLength+1)
+			},
+			wantErr:   domain.ErrIdempotencyKeyTooLong,
+			wantField: "idempotencyKey",
+		},
 	}
 
 	for _, tt := range tests {

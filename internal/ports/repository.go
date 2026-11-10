@@ -24,5 +24,6 @@ func (p Pagination) Offset() int {
 type TransactionRepository interface {
 	Create(ctx context.Context, transaction *domain.Transaction) error
 	Update(ctx context.Context, transaction *domain.Transaction) error
+	FindByIdempotencyKey(ctx context.Context, key string) (*domain.Transaction, error)
 	List(ctx context.Context, filter TransactionFilter, pagination Pagination) (transactions []domain.Transaction, total int64, err error)
 }

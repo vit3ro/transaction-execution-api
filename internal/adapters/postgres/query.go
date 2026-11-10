@@ -10,18 +10,22 @@ import (
 const transactionColumns = `id, account_id, type, amount::text, currency, description, status,
 	COALESCE(provider_transaction_id, ''), balance_after::text,
 	COALESCE(rejection_code, ''), COALESCE(rejection_message, ''),
-	created_at, updated_at`
+	COALESCE(idempotency_key, ''), created_at, updated_at`
 
 const insertTransactionSQL = `
 INSERT INTO transactions (
 	id, account_id, type, amount, currency, description, status,
 	provider_transaction_id, balance_after, rejection_code, rejection_message,
-	created_at, updated_at
+	idempotency_key, created_at, updated_at
 ) VALUES (
 	$1, $2, $3, $4::numeric, $5, $6, $7,
 	NULLIF($8::text, ''), $9::numeric, NULLIF($10::text, ''), NULLIF($11::text, ''),
-	$12, $13
+	NULLIF($12::text, ''), $13, $14
 )`
+
+const findByIdempotencyKeySQL = "SELECT " + transactionColumns + " FROM transactions WHERE idempotency_key = $1"
+
+const idempotencyKeyIndex = "idx_transactions_idempotency_key"
 
 const updateTransactionSQL = `
 UPDATE transactions SET

@@ -26,6 +26,9 @@ type fakeRepository struct {
 	updated      []domain.Transaction
 	updateCtxErr error
 
+	find      func(call int, key string) (*domain.Transaction, error)
+	findCalls int
+
 	listResult     []domain.Transaction
 	listTotal      int64
 	listCalls      int
@@ -48,6 +51,14 @@ func (r *fakeRepository) Update(ctx context.Context, transaction *domain.Transac
 	}
 	r.updated = append(r.updated, *transaction)
 	return nil
+}
+
+func (r *fakeRepository) FindByIdempotencyKey(_ context.Context, key string) (*domain.Transaction, error) {
+	r.findCalls++
+	if r.find == nil {
+		return nil, ports.ErrTransactionNotFound
+	}
+	return r.find(r.findCalls, key)
 }
 
 func (r *fakeRepository) List(_ context.Context, filter ports.TransactionFilter, pagination ports.Pagination) ([]domain.Transaction, int64, error) {

@@ -12,6 +12,7 @@ var (
 	ErrAmountBelowMinimum      = errors.New("amount must be greater than 1.00")
 	ErrDebitAmountExceedsLimit = errors.New("debit amount must not exceed 10000.00 per operation")
 	ErrDescriptionTooLong      = fmt.Errorf("description must not exceed %d characters", MaxDescriptionLength)
+	ErrIdempotencyKeyTooLong   = fmt.Errorf("idempotency key must not exceed %d characters", MaxIdempotencyKeyLength)
 	ErrInvalidMoneyFormat      = errors.New("invalid money format")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
 )

@@ -52,7 +52,8 @@ func TestExecuteTransaction_Approved(t *testing.T) {
 	}
 	input := validInput(t)
 
-	transaction, err := fixture.useCase.Execute(context.Background(), input)
+	result, err := fixture.useCase.Execute(context.Background(), input)
+	transaction := result.Transaction
 	if err != nil {
 		t.Fatalf("Execute returned unexpected error: %v", err)
 	}
@@ -107,7 +108,8 @@ func TestExecuteTransaction_RejectedForInsufficientFunds(t *testing.T) {
 	input := validInput(t)
 	input.Type = domain.TransactionTypeDebit
 
-	transaction, err := fixture.useCase.Execute(context.Background(), input)
+	result, err := fixture.useCase.Execute(context.Background(), input)
+	transaction := result.Transaction
 	if err != nil {
 		t.Fatalf("Execute returned unexpected error: %v", err)
 	}
@@ -159,7 +161,8 @@ func TestExecuteTransaction_ProviderFailures(t *testing.T) {
 			fixture.provider.result = tt.result
 			fixture.provider.err = tt.err
 
-			transaction, err := fixture.useCase.Execute(context.Background(), validInput(t))
+			result, err := fixture.useCase.Execute(context.Background(), validInput(t))
+			transaction := result.Transaction
 			if err != nil {
 				t.Fatalf("Execute returned unexpected error: %v", err)
 			}
@@ -212,7 +215,8 @@ func TestExecuteTransaction_DomainErrorSkipsPersistenceAndProvider(t *testing.T)
 			input := validInput(t)
 			tt.mutate(&input)
 
-			transaction, err := fixture.useCase.Execute(context.Background(), input)
+			result, err := fixture.useCase.Execute(context.Background(), input)
+			transaction := result.Transaction
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Execute error = %v, want %v", err, tt.wantErr)
@@ -235,7 +239,8 @@ func TestExecuteTransaction_CreateFailureSkipsProvider(t *testing.T) {
 	storageErr := errors.New("connection pool exhausted")
 	fixture.repository.createErr = storageErr
 
-	transaction, err := fixture.useCase.Execute(context.Background(), validInput(t))
+	result, err := fixture.useCase.Execute(context.Background(), validInput(t))
+	transaction := result.Transaction
 
 	if !errors.Is(err, storageErr) {
 		t.Fatalf("Execute error = %v, want it to wrap %v", err, storageErr)
@@ -258,7 +263,8 @@ func TestExecuteTransaction_UpdateFailureIsReported(t *testing.T) {
 		Balance:       mustParseMoney(t, "5500.00"),
 	}
 
-	transaction, err := fixture.useCase.Execute(context.Background(), validInput(t))
+	result, err := fixture.useCase.Execute(context.Background(), validInput(t))
+	transaction := result.Transaction
 
 	if !errors.Is(err, storageErr) {
 		t.Fatalf("Execute error = %v, want it to wrap %v", err, storageErr)
@@ -288,7 +294,8 @@ func TestExecuteTransaction_PersistsOutcomeEvenIfCallerCancels(t *testing.T) {
 		Balance:       mustParseMoney(t, "5500.00"),
 	}
 
-	transaction, err := fixture.useCase.Execute(ctx, validInput(t))
+	result, err := fixture.useCase.Execute(ctx, validInput(t))
+	transaction := result.Transaction
 	if err != nil {
 		t.Fatalf("Execute returned unexpected error: %v", err)
 	}

@@ -38,16 +38,29 @@ func (r *Repository) Create(ctx context.Context, transaction *domain.Transaction
 		balanceAfterParam(transaction),
 		transaction.RejectionCode,
 		transaction.RejectionMessage,
+		transaction.IdempotencyKey,
 		transaction.CreatedAt,
 		transaction.UpdatedAt,
 	)
-	if isUniqueViolation(err) {
-		return fmt.Errorf("%w: %s", ports.ErrTransactionAlreadyExists, transaction.ID)
-	}
 	if err != nil {
-		return fmt.Errorf("insert transaction: %w", err)
+		return mapInsertError(err, transaction)
 	}
 	return nil
+}
+
+func (r *Repository) FindByIdempotencyKey(ctx context.Context, key string) (*domain.Transaction, error) {
+	rows, err := r.pool.Query(ctx, findByIdempotencyKeySQL, key)
+	if err != nil {
+		return nil, fmt.Errorf("select transaction by idempotency key: %w", err)
+	}
+	transaction, err := pgx.CollectExactlyOneRow(rows, scanTransaction)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ports.ErrTransactionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read transaction by idempotency key: %w", err)
+	}
+	return &transaction, nil
 }
 
 func (r *Repository) Update(ctx context.Context, transaction *domain.Transaction) error {
@@ -132,6 +145,7 @@ func scanTransaction(row pgx.CollectableRow) (domain.Transaction, error) {
 		&balanceAfter,
 		&transaction.RejectionCode,
 		&transaction.RejectionMessage,
+		&transaction.IdempotencyKey,
 		&transaction.CreatedAt,
 		&transaction.UpdatedAt,
 	)
@@ -166,7 +180,13 @@ func balanceAfterParam(transaction *domain.Transaction) *string {
 	return &balance
 }
 
-func isUniqueViolation(err error) bool {
+func mapInsertError(err error, transaction *domain.Transaction) error {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolationCode
+	if !errors.As(err, &pgErr) || pgErr.Code != uniqueViolationCode {
+		return fmt.Errorf("insert transaction: %w", err)
+	}
+	if pgErr.ConstraintName == idempotencyKeyIndex {
+		return ports.ErrIdempotencyKeyConflict
+	}
+	return fmt.Errorf("%w: %s", ports.ErrTransactionAlreadyExists, transaction.ID)
 }

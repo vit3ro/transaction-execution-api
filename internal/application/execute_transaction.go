@@ -19,7 +19,10 @@ const (
 
 const outcomePersistTimeout = 5 * time.Second
 
-var ErrOutcomeNotPersisted = errors.New("transaction outcome could not be persisted")
+var (
+	ErrOutcomeNotPersisted  = errors.New("transaction outcome could not be persisted")
+	ErrIdempotencyKeyReused = errors.New("idempotency key was already used with a different request")
+)
 
 var failureMessages = map[string]string{
 	FailureCodeProviderTimeout:         "the provider did not respond in time",
@@ -33,6 +36,13 @@ type ExecuteTransactionInput struct {
 	Amount      domain.Money
 	Currency    domain.Currency
 	Description string
+
+	IdempotencyKey string
+}
+
+type ExecuteTransactionResult struct {
+	Transaction *domain.Transaction
+	Replayed    bool
 }
 
 type ExecuteTransaction struct {
@@ -59,14 +69,18 @@ func NewExecuteTransaction(
 	}
 }
 
-func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransactionInput) (*domain.Transaction, error) {
+func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransactionInput) (ExecuteTransactionResult, error) {
 	transaction, err := uc.newPendingTransaction(input)
 	if err != nil {
-		return nil, err
+		return ExecuteTransactionResult{}, err
+	}
+
+	if previous, err := uc.previousExecution(ctx, input); err != nil || previous != nil {
+		return ExecuteTransactionResult{Transaction: previous, Replayed: previous != nil}, err
 	}
 
 	if err := uc.repository.Create(ctx, transaction); err != nil {
-		return nil, fmt.Errorf("persist pending transaction: %w", err)
+		return uc.resolveCreateFailure(ctx, input, err)
 	}
 
 	result, providerErr := uc.provider.Execute(ctx, ports.ProviderRequest{
@@ -77,12 +91,51 @@ func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransact
 	})
 
 	if err := uc.applyOutcome(transaction, result, providerErr); err != nil {
-		return nil, err
+		return ExecuteTransactionResult{}, err
 	}
 	if err := uc.persistOutcome(ctx, transaction); err != nil {
-		return nil, err
+		return ExecuteTransactionResult{}, err
 	}
-	return transaction, nil
+	return ExecuteTransactionResult{Transaction: transaction}, nil
+}
+
+func (uc *ExecuteTransaction) previousExecution(ctx context.Context, input ExecuteTransactionInput) (*domain.Transaction, error) {
+	if input.IdempotencyKey == "" {
+		return nil, nil
+	}
+
+	previous, err := uc.repository.FindByIdempotencyKey(ctx, input.IdempotencyKey)
+	if errors.Is(err, ports.ErrTransactionNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("look up idempotency key: %w", err)
+	}
+	if !isSameRequest(previous, input) {
+		return nil, ErrIdempotencyKeyReused
+	}
+	return previous, nil
+}
+
+func (uc *ExecuteTransaction) resolveCreateFailure(ctx context.Context, input ExecuteTransactionInput, createErr error) (ExecuteTransactionResult, error) {
+	if errors.Is(createErr, ports.ErrIdempotencyKeyConflict) {
+		winner, err := uc.previousExecution(ctx, input)
+		if err != nil {
+			return ExecuteTransactionResult{}, err
+		}
+		if winner != nil {
+			return ExecuteTransactionResult{Transaction: winner, Replayed: true}, nil
+		}
+	}
+	return ExecuteTransactionResult{}, fmt.Errorf("persist pending transaction: %w", createErr)
+}
+
+func isSameRequest(previous *domain.Transaction, input ExecuteTransactionInput) bool {
+	return previous.AccountID == input.AccountID &&
+		previous.Type == input.Type &&
+		previous.Amount == input.Amount &&
+		previous.Currency == input.Currency &&
+		previous.Description == input.Description
 }
 
 func (uc *ExecuteTransaction) newPendingTransaction(input ExecuteTransactionInput) (*domain.Transaction, error) {
@@ -92,13 +145,14 @@ func (uc *ExecuteTransaction) newPendingTransaction(input ExecuteTransactionInpu
 	}
 
 	return domain.NewTransaction(domain.NewTransactionParams{
-		ID:          id,
-		AccountID:   input.AccountID,
-		Type:        input.Type,
-		Amount:      input.Amount,
-		Currency:    input.Currency,
-		Description: input.Description,
-		CreatedAt:   uc.clock.Now(),
+		ID:             id,
+		AccountID:      input.AccountID,
+		Type:           input.Type,
+		Amount:         input.Amount,
+		Currency:       input.Currency,
+		Description:    input.Description,
+		IdempotencyKey: input.IdempotencyKey,
+		CreatedAt:      uc.clock.Now(),
 	})
 }
 

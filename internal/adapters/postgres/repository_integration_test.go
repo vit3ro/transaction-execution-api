@@ -51,7 +51,13 @@ func runTests(m *testing.M) int {
 	}
 	defer pool.Close()
 
-	for _, migration := range []string{"000001_create_transactions.down.sql", "000001_create_transactions.up.sql"} {
+	migrations := []string{
+		"000002_add_idempotency_key.down.sql",
+		"000001_create_transactions.down.sql",
+		"000001_create_transactions.up.sql",
+		"000002_add_idempotency_key.up.sql",
+	}
+	for _, migration := range migrations {
 		if err := applyMigration(ctx, pool, migration); err != nil {
 			fmt.Fprintf(os.Stderr, "apply %s: %v\n", migration, err)
 			return 1
@@ -91,6 +97,10 @@ func withType(txType domain.TransactionType) transactionOption {
 
 func withCreatedAt(createdAt time.Time) transactionOption {
 	return func(p *domain.NewTransactionParams) { p.CreatedAt = createdAt }
+}
+
+func withIdempotencyKey(key string) transactionOption {
+	return func(p *domain.NewTransactionParams) { p.IdempotencyKey = key }
 }
 
 func withID(id uuid.UUID) transactionOption {
@@ -150,6 +160,7 @@ func assertSameTransaction(t *testing.T, got domain.Transaction, want *domain.Tr
 		got.ProviderTransactionID != want.ProviderTransactionID ||
 		got.RejectionCode != want.RejectionCode ||
 		got.RejectionMessage != want.RejectionMessage ||
+		got.IdempotencyKey != want.IdempotencyKey ||
 		!got.CreatedAt.Equal(want.CreatedAt) ||
 		!got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Errorf("stored transaction = %+v, want %+v", got, *want)
@@ -190,6 +201,36 @@ func TestRepository_CreateRejectsDuplicateID(t *testing.T) {
 
 	if !errors.Is(err, ports.ErrTransactionAlreadyExists) {
 		t.Fatalf("Create error = %v, want ErrTransactionAlreadyExists", err)
+	}
+}
+
+func TestRepository_FindByIdempotencyKey(t *testing.T) {
+	repository := newRepository(t)
+	keyed := newTransaction(t, withIdempotencyKey("order-42"))
+	mustCreate(t, repository, keyed)
+	mustCreate(t, repository, newTransaction(t))
+	mustCreate(t, repository, newTransaction(t))
+
+	found, err := repository.FindByIdempotencyKey(context.Background(), "order-42")
+	if err != nil {
+		t.Fatalf("FindByIdempotencyKey returned unexpected error: %v", err)
+	}
+	assertSameTransaction(t, *found, keyed)
+
+	_, err = repository.FindByIdempotencyKey(context.Background(), "order-unknown")
+	if !errors.Is(err, ports.ErrTransactionNotFound) {
+		t.Errorf("FindByIdempotencyKey error = %v, want ErrTransactionNotFound", err)
+	}
+}
+
+func TestRepository_CreateRejectsDuplicateIdempotencyKey(t *testing.T) {
+	repository := newRepository(t)
+	mustCreate(t, repository, newTransaction(t, withIdempotencyKey("order-42")))
+
+	err := repository.Create(context.Background(), newTransaction(t, withIdempotencyKey("order-42")))
+
+	if !errors.Is(err, ports.ErrIdempotencyKeyConflict) {
+		t.Fatalf("Create error = %v, want ErrIdempotencyKeyConflict", err)
 	}
 }
 

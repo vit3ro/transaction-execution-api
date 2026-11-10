@@ -45,7 +45,10 @@ func (c Currency) IsSupported() bool {
 	return c == CurrencyMXN
 }
 
-const MaxDescriptionLength = 255
+const (
+	MaxDescriptionLength    = 255
+	MaxIdempotencyKeyLength = 255
+)
 
 var (
 	minAmountExclusive = NewMoneyFromCents(1_00)
@@ -64,18 +67,20 @@ type Transaction struct {
 	BalanceAfter          *Money
 	RejectionCode         string
 	RejectionMessage      string
+	IdempotencyKey        string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }
 
 type NewTransactionParams struct {
-	ID          uuid.UUID
-	AccountID   string
-	Type        TransactionType
-	Amount      Money
-	Currency    Currency
-	Description string
-	CreatedAt   time.Time
+	ID             uuid.UUID
+	AccountID      string
+	Type           TransactionType
+	Amount         Money
+	Currency       Currency
+	Description    string
+	IdempotencyKey string
+	CreatedAt      time.Time
 }
 
 func NewTransaction(params NewTransactionParams) (*Transaction, error) {
@@ -85,15 +90,16 @@ func NewTransaction(params NewTransactionParams) (*Transaction, error) {
 
 	createdAt := normalizeTime(params.CreatedAt)
 	return &Transaction{
-		ID:          params.ID,
-		AccountID:   params.AccountID,
-		Type:        params.Type,
-		Amount:      params.Amount,
-		Currency:    params.Currency,
-		Description: params.Description,
-		Status:      TransactionStatusPending,
-		CreatedAt:   createdAt,
-		UpdatedAt:   createdAt,
+		ID:             params.ID,
+		AccountID:      params.AccountID,
+		Type:           params.Type,
+		Amount:         params.Amount,
+		Currency:       params.Currency,
+		Description:    params.Description,
+		Status:         TransactionStatusPending,
+		IdempotencyKey: params.IdempotencyKey,
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
 	}, nil
 }
 
@@ -151,6 +157,9 @@ func validate(params NewTransactionParams) error {
 	}
 	if utf8.RuneCountInString(params.Description) > MaxDescriptionLength {
 		return newValidationError("description", ErrDescriptionTooLong)
+	}
+	if utf8.RuneCountInString(params.IdempotencyKey) > MaxIdempotencyKeyLength {
+		return newValidationError("idempotencyKey", ErrIdempotencyKeyTooLong)
 	}
 	return nil
 }
