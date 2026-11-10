@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -70,11 +69,13 @@ type Transaction struct {
 }
 
 type NewTransactionParams struct {
+	ID          uuid.UUID
 	AccountID   string
 	Type        TransactionType
 	Amount      Money
 	Currency    Currency
 	Description string
+	CreatedAt   time.Time
 }
 
 func NewTransaction(params NewTransactionParams) (*Transaction, error) {
@@ -82,14 +83,9 @@ func NewTransaction(params NewTransactionParams) (*Transaction, error) {
 		return nil, err
 	}
 
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, fmt.Errorf("generate transaction id: %w", err)
-	}
-
-	createdAt := now()
+	createdAt := normalizeTime(params.CreatedAt)
 	return &Transaction{
-		ID:          id,
+		ID:          params.ID,
 		AccountID:   params.AccountID,
 		Type:        params.Type,
 		Amount:      params.Amount,
@@ -101,8 +97,8 @@ func NewTransaction(params NewTransactionParams) (*Transaction, error) {
 	}, nil
 }
 
-func (t *Transaction) MarkExecuted(providerTransactionID string, balanceAfter Money) error {
-	if err := t.transitionTo(TransactionStatusExecuted); err != nil {
+func (t *Transaction) MarkExecuted(providerTransactionID string, balanceAfter Money, at time.Time) error {
+	if err := t.transitionTo(TransactionStatusExecuted, at); err != nil {
 		return err
 	}
 	t.ProviderTransactionID = providerTransactionID
@@ -110,8 +106,8 @@ func (t *Transaction) MarkExecuted(providerTransactionID string, balanceAfter Mo
 	return nil
 }
 
-func (t *Transaction) MarkRejected(code, message string) error {
-	if err := t.transitionTo(TransactionStatusRejected); err != nil {
+func (t *Transaction) MarkRejected(code, message string, at time.Time) error {
+	if err := t.transitionTo(TransactionStatusRejected, at); err != nil {
 		return err
 	}
 	t.RejectionCode = code
@@ -119,8 +115,8 @@ func (t *Transaction) MarkRejected(code, message string) error {
 	return nil
 }
 
-func (t *Transaction) MarkFailed(code, message string) error {
-	if err := t.transitionTo(TransactionStatusFailed); err != nil {
+func (t *Transaction) MarkFailed(code, message string, at time.Time) error {
+	if err := t.transitionTo(TransactionStatusFailed, at); err != nil {
 		return err
 	}
 	t.RejectionCode = code
@@ -128,12 +124,12 @@ func (t *Transaction) MarkFailed(code, message string) error {
 	return nil
 }
 
-func (t *Transaction) transitionTo(next TransactionStatus) error {
+func (t *Transaction) transitionTo(next TransactionStatus, at time.Time) error {
 	if t.Status != TransactionStatusPending {
 		return &InvalidTransitionError{From: t.Status, To: next}
 	}
 	t.Status = next
-	t.UpdatedAt = now()
+	t.UpdatedAt = normalizeTime(at)
 	return nil
 }
 
@@ -159,6 +155,6 @@ func validate(params NewTransactionParams) error {
 	return nil
 }
 
-func now() time.Time {
-	return time.Now().UTC().Truncate(time.Microsecond)
+func normalizeTime(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
 }

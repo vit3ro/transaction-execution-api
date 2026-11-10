@@ -4,8 +4,17 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/vit3ro/transaction-execution-api/internal/domain"
+)
+
+var (
+	testID         = uuid.MustParse("0192f0c1-7c3a-7b1e-8f00-000000000001")
+	testCreatedAt  = time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
+	testResolvedAt = testCreatedAt.Add(2 * time.Second)
 )
 
 func mustParseMoney(t *testing.T, value string) domain.Money {
@@ -20,11 +29,13 @@ func mustParseMoney(t *testing.T, value string) domain.Money {
 func validParams(t *testing.T) domain.NewTransactionParams {
 	t.Helper()
 	return domain.NewTransactionParams{
+		ID:          testID,
 		AccountID:   "acc-123456",
 		Type:        domain.TransactionTypeCredit,
 		Amount:      mustParseMoney(t, "1500.00"),
 		Currency:    domain.CurrencyMXN,
 		Description: "Transferencia recibida",
+		CreatedAt:   testCreatedAt,
 	}
 }
 
@@ -45,8 +56,8 @@ func TestNewTransaction_Success(t *testing.T) {
 		t.Fatalf("NewTransaction returned unexpected error: %v", err)
 	}
 
-	if transaction.ID.Version() != 7 {
-		t.Errorf("ID version = %d, want UUID v7", transaction.ID.Version())
+	if transaction.ID != params.ID {
+		t.Errorf("ID = %s, want %s", transaction.ID, params.ID)
 	}
 	if transaction.AccountID != params.AccountID {
 		t.Errorf("AccountID = %q, want %q", transaction.AccountID, params.AccountID)
@@ -72,9 +83,25 @@ func TestNewTransaction_Success(t *testing.T) {
 	if transaction.RejectionCode != "" || transaction.RejectionMessage != "" {
 		t.Error("a new transaction must not carry rejection details")
 	}
-	if transaction.CreatedAt.IsZero() || !transaction.CreatedAt.Equal(transaction.UpdatedAt) {
-		t.Errorf("CreatedAt = %v and UpdatedAt = %v, want equal non-zero timestamps",
-			transaction.CreatedAt, transaction.UpdatedAt)
+	if !transaction.CreatedAt.Equal(testCreatedAt) || !transaction.UpdatedAt.Equal(testCreatedAt) {
+		t.Errorf("CreatedAt = %v and UpdatedAt = %v, want both %v",
+			transaction.CreatedAt, transaction.UpdatedAt, testCreatedAt)
+	}
+}
+
+func TestNewTransaction_NormalizesCreatedAt(t *testing.T) {
+	mexicoCity := time.FixedZone("America/Mexico_City", -6*60*60)
+	params := validParams(t)
+	params.CreatedAt = time.Date(2025, 3, 15, 4, 30, 0, 123456789, mexicoCity)
+
+	transaction, err := domain.NewTransaction(params)
+	if err != nil {
+		t.Fatalf("NewTransaction returned unexpected error: %v", err)
+	}
+
+	want := time.Date(2025, 3, 15, 10, 30, 0, 123456000, time.UTC)
+	if transaction.CreatedAt != want {
+		t.Errorf("CreatedAt = %v, want %v (UTC, microsecond precision)", transaction.CreatedAt, want)
 	}
 }
 
@@ -229,7 +256,7 @@ func TestTransaction_MarkExecuted(t *testing.T) {
 	transaction := newPendingTransaction(t)
 	balance := mustParseMoney(t, "5500.00")
 
-	if err := transaction.MarkExecuted("txn-789", balance); err != nil {
+	if err := transaction.MarkExecuted("txn-789", balance, testResolvedAt); err != nil {
 		t.Fatalf("MarkExecuted returned unexpected error: %v", err)
 	}
 
@@ -242,15 +269,18 @@ func TestTransaction_MarkExecuted(t *testing.T) {
 	if transaction.BalanceAfter == nil || *transaction.BalanceAfter != balance {
 		t.Errorf("BalanceAfter = %v, want %s", transaction.BalanceAfter, balance)
 	}
-	if transaction.UpdatedAt.Before(transaction.CreatedAt) {
-		t.Error("UpdatedAt must not be before CreatedAt")
+	if !transaction.UpdatedAt.Equal(testResolvedAt) {
+		t.Errorf("UpdatedAt = %v, want %v", transaction.UpdatedAt, testResolvedAt)
+	}
+	if !transaction.CreatedAt.Equal(testCreatedAt) {
+		t.Errorf("CreatedAt = %v, want it unchanged at %v", transaction.CreatedAt, testCreatedAt)
 	}
 }
 
 func TestTransaction_MarkRejected(t *testing.T) {
 	transaction := newPendingTransaction(t)
 
-	if err := transaction.MarkRejected("INSUFFICIENT_FUNDS", "Not enough balance"); err != nil {
+	if err := transaction.MarkRejected("INSUFFICIENT_FUNDS", "Not enough balance", testResolvedAt); err != nil {
 		t.Fatalf("MarkRejected returned unexpected error: %v", err)
 	}
 
@@ -269,7 +299,7 @@ func TestTransaction_MarkRejected(t *testing.T) {
 func TestTransaction_MarkFailed(t *testing.T) {
 	transaction := newPendingTransaction(t)
 
-	if err := transaction.MarkFailed("PROVIDER_UNAVAILABLE", "provider request timed out"); err != nil {
+	if err := transaction.MarkFailed("PROVIDER_UNAVAILABLE", "provider request timed out", testResolvedAt); err != nil {
 		t.Fatalf("MarkFailed returned unexpected error: %v", err)
 	}
 
@@ -285,13 +315,13 @@ func TestTransaction_MarkFailed(t *testing.T) {
 func TestTransaction_TransitionsFromTerminalStatusAreRejected(t *testing.T) {
 	terminalStates := map[domain.TransactionStatus]func(*domain.Transaction) error{
 		domain.TransactionStatusExecuted: func(tx *domain.Transaction) error {
-			return tx.MarkExecuted("txn-1", domain.NewMoneyFromCents(100))
+			return tx.MarkExecuted("txn-1", domain.NewMoneyFromCents(100), testResolvedAt)
 		},
 		domain.TransactionStatusRejected: func(tx *domain.Transaction) error {
-			return tx.MarkRejected("CODE", "message")
+			return tx.MarkRejected("CODE", "message", testResolvedAt)
 		},
 		domain.TransactionStatusFailed: func(tx *domain.Transaction) error {
-			return tx.MarkFailed("CODE", "message")
+			return tx.MarkFailed("CODE", "message", testResolvedAt)
 		},
 	}
 
