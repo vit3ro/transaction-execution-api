@@ -388,6 +388,51 @@
             },
             "description": "Cuerpo que no es JSON válido."
           }
+        },
+        {
+          "name": "Content-Type distinto de JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 415\", () => pm.response.to.have.status(415));",
+                  "pm.test(\"code = UNSUPPORTED_MEDIA_TYPE\", () => pm.expect(pm.response.json().code).to.eql(\"UNSUPPORTED_MEDIA_TYPE\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "El cuerpo solo se lee como JSON si el cliente lo declara así."
+          }
         }
       ]
     },
@@ -1639,6 +1684,75 @@
               ]
             },
             "description": "Fallo 5XX con cuerpo válido."
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Rutas y métodos inexistentes",
+      "description": "También responden con el formato de error problem+json.",
+      "item": [
+        {
+          "name": "Ruta inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code = NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"NOT_FOUND\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/unknown",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "unknown"
+              ]
+            },
+            "description": "Ninguna ruta coincide con el path."
+          }
+        },
+        {
+          "name": "Método no soportado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 405\", () => pm.response.to.have.status(405));",
+                  "pm.test(\"code = METHOD_NOT_ALLOWED\", () => pm.expect(pm.response.json().code).to.eql(\"METHOD_NOT_ALLOWED\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"header Allow con los metodos validos\", () => pm.expect(pm.response.headers.get(\"Allow\")).to.include(\"POST\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "DELETE no está definido para /transactions."
           }
         }
       ]

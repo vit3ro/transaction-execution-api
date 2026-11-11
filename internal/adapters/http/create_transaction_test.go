@@ -302,6 +302,51 @@ func TestCreateTransaction_InvalidFields(t *testing.T) {
 	}
 }
 
+func TestCreateTransaction_RejectsNonJSONContentType(t *testing.T) {
+	contentTypes := map[string]string{
+		"missing":         "",
+		"plain text":      "text/plain",
+		"form":            "application/x-www-form-urlencoded",
+		"similar subtype": "application/jsonx",
+		"malformed":       "application/json;;;",
+	}
+
+	for name, contentType := range contentTypes {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture()
+			request := newPost(validBody)
+			request.Header.Del("Content-Type")
+			if contentType != "" {
+				request.Header.Set("Content-Type", contentType)
+			}
+
+			recorder := f.do(request)
+
+			assertProblem(t, recorder, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE")
+			if len(f.executor.inputs) != 0 {
+				t.Error("the use case must not be called with an unsupported media type")
+			}
+		})
+	}
+}
+
+func TestCreateTransaction_AcceptsJSONContentTypeVariants(t *testing.T) {
+	for _, contentType := range []string{"application/json; charset=utf-8", "Application/JSON"} {
+		t.Run(contentType, func(t *testing.T) {
+			f := newFixture()
+			f.executor.result = application.ExecuteTransactionResult{Transaction: executedTransaction(t)}
+			request := newPost(validBody)
+			request.Header.Set("Content-Type", contentType)
+
+			recorder := f.do(request)
+
+			if recorder.Code != http.StatusCreated {
+				t.Errorf("status = %d, want 201 (body %s)", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestCreateTransaction_BodyTooLarge(t *testing.T) {
 	f := newFixture()
 	body := fmt.Sprintf(`{"accountId":"acc-1","type":"CREDIT","amount":10.00,"currency":"MXN","description":%q}`,

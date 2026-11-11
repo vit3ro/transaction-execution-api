@@ -10,6 +10,8 @@ info:
     - Los montos son números JSON con un máximo de dos decimales. Nunca se procesan como punto flotante.
     - Las fechas usan RFC 3339 en UTC.
     - Los errores usan `application/problem+json` (RFC 7807) con los campos adicionales `code`, `errors` y `requestId`.
+    - Una ruta inexistente responde 404 (`NOT_FOUND`) y un método no soportado responde 405 (`METHOD_NOT_ALLOWED`)
+      con el header `Allow`, ambos en el mismo formato de error.
     - Toda respuesta incluye el header `X-Request-ID`.
     - La API no implementa autenticación: queda fuera del alcance del reto y se asume resuelta por la capa de entrada.
 servers:
@@ -217,6 +219,25 @@ paths:
                     status: 413
                     code: REQUEST_TOO_LARGE
                     detail: request body is too large
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+        '415':
+          description: El header `Content-Type` no es `application/json`. Se admiten parámetros como `charset`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                tipoNoSoportado:
+                  summary: Content-Type distinto de JSON
+                  value:
+                    type: about:blank
+                    title: Unsupported Media Type
+                    status: 415
+                    code: UNSUPPORTED_MEDIA_TYPE
+                    detail: Content-Type must be application/json
                     requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
         '422':
           description: La petición es válida pero incumple una regla de negocio. No se llama al proveedor ni se persiste nada.
@@ -756,6 +777,9 @@ components:
             - INVALID_JSON
             - VALIDATION_ERROR
             - REQUEST_TOO_LARGE
+            - UNSUPPORTED_MEDIA_TYPE
+            - NOT_FOUND
+            - METHOD_NOT_ALLOWED
             - AMOUNT_BELOW_MINIMUM
             - DEBIT_AMOUNT_EXCEEDS_LIMIT
             - UNSUPPORTED_CURRENCY

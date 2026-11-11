@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/vit3ro/transaction-execution-api/internal/application"
@@ -165,13 +166,54 @@ func TestListTransactions_UnexpectedError(t *testing.T) {
 	}
 }
 
-func TestRouter_RejectsUnsupportedMethodsAndPaths(t *testing.T) {
+func TestRouter_UnknownPathIsProblemDetails(t *testing.T) {
+	for _, target := range []string{"/unknown", "/transactions/123", "/"} {
+		t.Run(target, func(t *testing.T) {
+			f := newFixture()
+
+			recorder := f.get(target)
+
+			assertProblem(t, recorder, http.StatusNotFound, "NOT_FOUND")
+		})
+	}
+}
+
+func TestRouter_UnsupportedMethodIsProblemDetails(t *testing.T) {
+	tests := []struct {
+		method    string
+		target    string
+		wantAllow []string
+	}{
+		{http.MethodDelete, "/transactions", []string{"GET", "HEAD", "POST"}},
+		{http.MethodPut, "/transactions", []string{"GET", "HEAD", "POST"}},
+		{http.MethodPost, "/healthz", []string{"GET", "HEAD"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
+			f := newFixture()
+
+			recorder := f.do(newRequest(tt.method, tt.target))
+
+			assertProblem(t, recorder, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
+			allow := strings.Split(strings.ReplaceAll(recorder.Header().Get("Allow"), " ", ""), ",")
+			slices.Sort(allow)
+			if !slices.Equal(allow, tt.wantAllow) {
+				t.Errorf("Allow = %v, want %v", allow, tt.wantAllow)
+			}
+			if len(f.executor.inputs) != 0 || len(f.lister.inputs) != 0 {
+				t.Error("no use case must run for an unsupported method")
+			}
+		})
+	}
+}
+
+func TestRouter_MatchedRoutesAreNotRewritten(t *testing.T) {
 	f := newFixture()
 
-	if recorder := f.do(newRequest(http.MethodDelete, "/transactions")); recorder.Code != http.StatusMethodNotAllowed {
-		t.Errorf("DELETE /transactions status = %d, want 405", recorder.Code)
-	}
-	if recorder := f.get("/unknown"); recorder.Code != http.StatusNotFound {
-		t.Errorf("GET /unknown status = %d, want 404", recorder.Code)
+	recorder := f.do(newRequest(http.MethodHead, "/healthz"))
+
+	if recorder.Code != http.StatusOK {
+		t.Errorf("HEAD /healthz status = %d, want 200 from the GET route", recorder.Code)
 	}
 }

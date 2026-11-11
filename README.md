@@ -57,7 +57,7 @@ go run ./cmd/api
 
 | Forma | Cómo |
 | --- | --- |
-| Postman | Importar [docs/postman_collection.json](docs/postman_collection.json) y usar **Run collection**: 37 peticiones con pruebas automáticas, una carpeta por requisito. |
+| Postman | Importar [docs/postman_collection.json](docs/postman_collection.json) y usar **Run collection**: 40 peticiones con pruebas automáticas, una carpeta por requisito. |
 | curl | Los ejemplos de esta sección. |
 | Contrato | [docs/openapi.yaml](docs/openapi.yaml), con un ejemplo por cada respuesta. |
 
@@ -102,13 +102,14 @@ Reglas de negocio, validadas antes de llamar al proveedor: monto **mayor a 1.00*
 | Petición inválida (JSON, campos, tipos, formatos) | 400 | Error `INVALID_JSON` o `VALIDATION_ERROR`, con detalle por campo |
 | Petición original con esa llave aún en proceso | 409 | Error `IDEMPOTENT_REQUEST_IN_PROGRESS` |
 | Cuerpo mayor a 64 KB | 413 | Error `REQUEST_TOO_LARGE` |
+| `Content-Type` distinto de `application/json` | 415 | Error `UNSUPPORTED_MEDIA_TYPE` |
 | Regla de negocio incumplida | 422 | Error `AMOUNT_BELOW_MINIMUM`, `DEBIT_AMOUNT_EXCEEDS_LIMIT` o `UNSUPPORTED_CURRENCY` |
 | Misma llave con otro cuerpo | 422 | Error `IDEMPOTENCY_KEY_REUSED` |
 | Proveedor respondió fuera del contrato | 502 | Transacción `FAILED` |
 | Proveedor inalcanzable o circuit breaker abierto | 503 | Transacción `FAILED` |
 | Timeout del proveedor | 504 | Transacción `FAILED` |
 
-Los errores usan `application/problem+json` (RFC 7807) con `code`, `detail`, `errors` por campo y `requestId`. Toda respuesta incluye el header `X-Request-ID`.
+Todos los errores usan `application/problem+json` (RFC 7807) con `code`, `detail`, `errors` por campo y `requestId`, incluidas las rutas inexistentes (404 `NOT_FOUND`) y los métodos no soportados (405 `METHOD_NOT_ALLOWED`, con el header `Allow`). Toda respuesta incluye el header `X-Request-ID`.
 
 ### `GET /transactions`
 
@@ -205,7 +206,7 @@ TEST_DATABASE_URL="postgres://transactions:transactions@localhost:5432/transacti
 go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
 ```
 
-Cobertura medida con `-race`: dominio 97.6 %, casos de uso 97.5 %, adaptador HTTP 98.4 %, cliente del proveedor 90.9 % y repositorio 84.1 % con los tests de integración.
+Cobertura medida con `-race`: dominio 97.6 %, casos de uso 97.5 %, adaptador HTTP 98.5 %, cliente del proveedor 90.9 % y repositorio 84.1 % con los tests de integración.
 
 Sin Go instalado, todo corre en contenedores:
 
@@ -261,7 +262,6 @@ Limitaciones conocidas:
 - **Sin autenticación ni rate limiting.** La `Idempotency-Key` es global, no por cliente, y no expira.
 - **Sin métricas ni trazas.** Solo hay logs estructurados.
 - **Una sola moneda y dos decimales.**
-- **404 y 405 en texto plano**, no en `problem+json`.
 - **Migraciones al arrancar** pensadas para desarrollo; en producción conviene un paso de despliegue aparte.
 
 Siguientes pasos, en orden de valor:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -61,6 +62,14 @@ type decodeFailure struct {
 }
 
 func decodeCreateRequest(w http.ResponseWriter, r *http.Request) (createTransactionRequest, *decodeFailure) {
+	if !hasJSONContentType(r) {
+		return createTransactionRequest{}, &decodeFailure{
+			status: http.StatusUnsupportedMediaType,
+			code:   codeUnsupportedMediaType,
+			detail: "Content-Type must be application/json",
+		}
+	}
+
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
 	decoder.DisallowUnknownFields()
 
@@ -72,6 +81,14 @@ func decodeCreateRequest(w http.ResponseWriter, r *http.Request) (createTransact
 		return createTransactionRequest{}, invalidJSON("request body must contain a single JSON object")
 	}
 	return request, nil
+}
+
+// The body is only read as JSON when the client says it is JSON. Any other
+// media type gets a clear 415 instead of failing later as invalid JSON.
+// Parameters such as charset are allowed.
+func hasJSONContentType(r *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mediaType == contentTypeJSON
 }
 
 func classifyDecodeError(err error) *decodeFailure {

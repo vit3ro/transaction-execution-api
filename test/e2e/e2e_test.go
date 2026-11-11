@@ -432,3 +432,44 @@ func TestMalformedRequestsAreBadRequests(t *testing.T) {
 		})
 	}
 }
+
+func TestEveryErrorUsesProblemDetails(t *testing.T) {
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		contentType string
+		body        string
+		wantStatus  int
+		wantCode    string
+	}{
+		{"non JSON content type", http.MethodPost, "/transactions", "text/plain", `{"accountId":"acc-1"}`, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE"},
+		{"unknown path", http.MethodGet, "/unknown", "", "", http.StatusNotFound, "NOT_FOUND"},
+		{"unsupported method", http.MethodDelete, "/transactions", "", "", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request, err := http.NewRequest(tt.method, baseURL+tt.path, bytes.NewReader([]byte(tt.body)))
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			if tt.contentType != "" {
+				request.Header.Set("Content-Type", tt.contentType)
+			}
+
+			response := send(t, request)
+
+			assertStatus(t, response, tt.wantStatus)
+			if got := response.header.Get("Content-Type"); got != "application/problem+json" {
+				t.Errorf("Content-Type = %q, want application/problem+json", got)
+			}
+			if response.text("code") != tt.wantCode {
+				t.Errorf("code = %q, want %q", response.text("code"), tt.wantCode)
+			}
+			if tt.wantStatus == http.StatusMethodNotAllowed && response.header.Get("Allow") == "" {
+				t.Error("a 405 must list the allowed methods in the Allow header")
+			}
+		})
+	}
+}
