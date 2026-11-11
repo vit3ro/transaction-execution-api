@@ -26,13 +26,6 @@ docker compose up -d --build --wait
 | `mock-provider` | 8081 | Proveedor externo simulado. |
 | `postgres` | 5432 | PostgreSQL 17. |
 
-Primera prueba:
-
-```bash
-curl -s -X POST http://localhost:8080/transactions -H 'Content-Type: application/json' \
-  -d '{"accountId":"acc-123456","type":"CREDIT","amount":1500.00,"currency":"MXN","description":"Transferencia recibida"}'
-```
-
 Para apagar: `docker compose down --volumes --remove-orphans`.
 
 <details>
@@ -58,21 +51,7 @@ go run ./cmd/api
 | Forma | Cómo |
 | --- | --- |
 | Postman | Importar [docs/postman_collection.json](docs/postman_collection.json) y usar **Run collection**: 40 peticiones con pruebas automáticas, una carpeta por requisito. |
-| curl | Los ejemplos de esta sección. |
 | Contrato | [docs/openapi.yaml](docs/openapi.yaml), con un ejemplo por cada respuesta. |
-
-```bash
-# Regla de negocio: DEBIT mayor a 10,000.00 -> 422
-curl -s -X POST http://localhost:8080/transactions -H 'Content-Type: application/json' \
-  -d '{"accountId":"acc-123456","type":"DEBIT","amount":10000.01,"currency":"MXN"}'
-
-# Rechazo del proveedor -> 201 con status REJECTED
-curl -s -X POST http://localhost:8080/transactions -H 'Content-Type: application/json' \
-  -d '{"accountId":"acc-insufficient","type":"DEBIT","amount":500.00,"currency":"MXN"}'
-
-# Consulta con filtros y paginación
-curl -s 'http://localhost:8080/transactions?accountId=acc-123456&status=EXECUTED&page=1&limit=5'
-```
 
 ### Cuentas especiales del mock
 
