@@ -1,0 +1,232 @@
+@api = http://localhost:8080
+@provider = http://localhost:8081
+
+### Health: liveness
+GET {{api}}/healthz
+
+### Health: readiness
+GET {{api}}/readyz
+
+### CREDIT approved -> 201 EXECUTED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 1500.00,
+  "currency": "MXN",
+  "description": "Transferencia recibida"
+}
+
+### DEBIT approved -> 201 EXECUTED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "DEBIT",
+  "amount": 250.75,
+  "currency": "MXN",
+  "description": "Pago de servicio"
+}
+
+### Insufficient funds (provider 422) -> 201 REJECTED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-insufficient",
+  "type": "DEBIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}
+
+### Blocked account (provider 403) -> 201 REJECTED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-blocked",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}
+
+### Provider 500 with contract body -> 201 REJECTED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-error",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}
+
+### Provider 503 without valid body -> 503 FAILED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-down",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}
+
+### Provider 200 with invalid JSON -> 503 FAILED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-garbage",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}
+
+### Slow provider -> 504 FAILED
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-slow",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}
+
+### Business rule: amount at the minimum -> 422 AMOUNT_BELOW_MINIMUM
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 1.00,
+  "currency": "MXN"
+}
+
+### Business rule: DEBIT over the limit -> 422 DEBIT_AMOUNT_EXCEEDS_LIMIT
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "DEBIT",
+  "amount": 10000.01,
+  "currency": "MXN"
+}
+
+### Business rule: unsupported currency -> 422 UNSUPPORTED_CURRENCY
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "USD"
+}
+
+### Validation: missing and invalid fields -> 400 VALIDATION_ERROR
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "",
+  "type": "TRANSFER",
+  "amount": 10.001
+}
+
+### Validation: unknown field -> 400 VALIDATION_ERROR
+POST {{api}}/transactions
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN",
+  "balance": 999999
+}
+
+### Validation: malformed JSON -> 400 INVALID_JSON
+POST {{api}}/transactions
+Content-Type: application/json
+
+{"accountId":
+
+### Idempotency: first request -> 201
+POST {{api}}/transactions
+Content-Type: application/json
+Idempotency-Key: order-0001
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 300.00,
+  "currency": "MXN",
+  "description": "Orden 0001"
+}
+
+### Idempotency: same key and body -> 200 with Idempotent-Replayed: true
+POST {{api}}/transactions
+Content-Type: application/json
+Idempotency-Key: order-0001
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 300.00,
+  "currency": "MXN",
+  "description": "Orden 0001"
+}
+
+### Idempotency: same key, different body -> 422 IDEMPOTENCY_KEY_REUSED
+POST {{api}}/transactions
+Content-Type: application/json
+Idempotency-Key: order-0001
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 999.00,
+  "currency": "MXN",
+  "description": "Orden 0001"
+}
+
+### List: all transactions
+GET {{api}}/transactions
+
+### List: by account, paginated
+GET {{api}}/transactions?accountId=acc-123456&page=1&limit=5
+
+### List: by status and type
+GET {{api}}/transactions?status=REJECTED&type=DEBIT
+
+### List: invalid pagination -> 400 VALIDATION_ERROR
+GET {{api}}/transactions?page=0&limit=500
+
+### Provider directly: approved
+POST {{provider}}/provider/v1/execute
+Content-Type: application/json
+
+{
+  "accountId": "acc-123456",
+  "type": "CREDIT",
+  "amount": 1500.00,
+  "currency": "MXN"
+}
+
+### Provider directly: 500 with contract body
+POST {{provider}}/provider/v1/execute
+Content-Type: application/json
+
+{
+  "accountId": "acc-error",
+  "type": "CREDIT",
+  "amount": 100.00,
+  "currency": "MXN"
+}

@@ -27,5 +27,16 @@ services:
       postgres:
         condition: service_healthy
 
+  mock-provider:
+    build:
+      context: .
+      dockerfile: mock-provider/Dockerfile
+    environment:
+      MOCK_PORT: "8081"
+      MOCK_INITIAL_BALANCE: ${MOCK_INITIAL_BALANCE:-10000.00}
+      MOCK_SLOW_DELAY: ${MOCK_SLOW_DELAY:-5s}
+    ports:
+      - "${MOCK_PROVIDER_PORT:-8081}:8081"
+
 volumes:
   postgres-data:
