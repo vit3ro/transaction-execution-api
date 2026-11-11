@@ -1,0 +1,807 @@
+openapi: 3.0.3
+info:
+  title: Transaction Execution API
+  version: 1.0.0
+  description: |
+    API REST que ejecuta transacciones financieras (CREDIT y DEBIT) contra un proveedor externo,
+    registra el resultado y permite consultarlo.
+
+    Convenciones:
+    - Los montos son números JSON con un máximo de dos decimales. Nunca se procesan como punto flotante.
+    - Las fechas usan RFC 3339 en UTC.
+    - Los errores usan `application/problem+json` (RFC 7807) con los campos adicionales `code`, `errors` y `requestId`.
+    - Una ruta inexistente responde 404 (`NOT_FOUND`) y un método no soportado responde 405 (`METHOD_NOT_ALLOWED`)
+      con el header `Allow`, ambos en el mismo formato de error.
+    - Toda respuesta incluye el header `X-Request-ID`.
+    - La API no implementa autenticación: queda fuera del alcance del reto y se asume resuelta por la capa de entrada.
+servers:
+  - url: http://localhost:8080
+    description: Entorno local (docker compose)
+security: []
+tags:
+  - name: Transacciones
+    description: Ejecución y consulta de transacciones.
+  - name: Salud
+    description: Verificaciones para orquestadores.
+paths:
+  /transactions:
+    post:
+      tags: [Transacciones]
+      operationId: createTransaction
+      summary: Ejecuta una transacción
+      description: |
+        Valida la petición, aplica las reglas de negocio, ejecuta la transacción contra el proveedor
+        y persiste el resultado.
+
+        El recurso se crea aunque el proveedor rechace la operación: en ese caso la respuesta es 201
+        con `status: REJECTED`. Si el proveedor no responde de forma válida, la transacción queda en
+        `FAILED` y la respuesta es 502, 503 o 504 con la transacción en el cuerpo.
+
+        Reglas de negocio (se validan antes de llamar al proveedor):
+        - El monto debe ser mayor a 1.00.
+        - Un DEBIT no puede exceder 10,000.00 por operación.
+        - Solo se acepta la moneda MXN.
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+            examples:
+              credito:
+                summary: Crédito
+                value:
+                  accountId: acc-123456
+                  type: CREDIT
+                  amount: 1500.00
+                  currency: MXN
+                  description: Transferencia recibida
+              debito:
+                summary: Débito
+                value:
+                  accountId: acc-123456
+                  type: DEBIT
+                  amount: 250.75
+                  currency: MXN
+                  description: Pago de servicio
+      responses:
+        '201':
+          description: Transacción creada. El campo `status` indica si el proveedor la ejecutó o la rechazó.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              examples:
+                ejecutada:
+                  summary: Ejecutada por el proveedor
+                  value:
+                    id: 01a1c807-b77d-7622-ad92-40b4d2d02185
+                    accountId: acc-123456
+                    type: CREDIT
+                    amount: 1500.00
+                    currency: MXN
+                    description: Transferencia recibida
+                    status: EXECUTED
+                    providerTransactionId: txn-000001
+                    balanceAfter: 11500.00
+                    createdAt: '2025-03-15T10:30:00Z'
+                rechazada:
+                  summary: Rechazada por el proveedor
+                  value:
+                    id: 01a1c807-b855-7c40-b48c-130bd498bf8d
+                    accountId: acc-insufficient
+                    type: DEBIT
+                    amount: 500.00
+                    currency: MXN
+                    description: ''
+                    status: REJECTED
+                    rejectionCode: INSUFFICIENT_FUNDS
+                    rejectionMessage: Account balance is not enough
+                    createdAt: '2025-03-15T10:30:00Z'
+        '200':
+          description: |
+            Repetición idempotente: ya existía una transacción con la misma `Idempotency-Key` y el mismo
+            cuerpo. Se devuelve la transacción original sin ejecutar otra vez.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/Idempotent-Replayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              examples:
+                repetida:
+                  summary: Transacción original
+                  value:
+                    id: 01a1c807-b77d-7622-ad92-40b4d2d02185
+                    accountId: acc-123456
+                    type: CREDIT
+                    amount: 300.00
+                    currency: MXN
+                    description: Orden 0001
+                    status: EXECUTED
+                    providerTransactionId: txn-000004
+                    balanceAfter: 12100.00
+                    createdAt: '2025-03-15T10:30:00Z'
+        '400':
+          description: La petición no tiene la forma esperada (JSON inválido, campos faltantes, tipos o formatos incorrectos).
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                jsonInvalido:
+                  summary: JSON malformado
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: INVALID_JSON
+                    detail: request body must be valid JSON
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+                camposInvalidos:
+                  summary: Campos faltantes o inválidos
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: VALIDATION_ERROR
+                    detail: request has invalid fields
+                    errors:
+                      - field: accountId
+                        message: must not be empty
+                      - field: type
+                        message: must be CREDIT or DEBIT
+                      - field: amount
+                        message: must be a number with at most two decimal places
+                      - field: currency
+                        message: is required
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+                campoDesconocido:
+                  summary: Campo no aceptado
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: VALIDATION_ERROR
+                    detail: request has invalid fields
+                    errors:
+                      - field: balance
+                        message: is not an accepted field
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+        '409':
+          description: Otra petición con la misma `Idempotency-Key` sigue en proceso.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/Idempotent-Replayed'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                enProceso:
+                  summary: Petición original en proceso
+                  value:
+                    type: about:blank
+                    title: Conflict
+                    status: 409
+                    code: IDEMPOTENT_REQUEST_IN_PROGRESS
+                    detail: a request with this idempotency key is still being processed
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+        '413':
+          description: El cuerpo supera el tamaño máximo (64 KB).
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                cuerpoGrande:
+                  summary: Cuerpo demasiado grande
+                  value:
+                    type: about:blank
+                    title: Request Entity Too Large
+                    status: 413
+                    code: REQUEST_TOO_LARGE
+                    detail: request body is too large
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+        '415':
+          description: El header `Content-Type` no es `application/json`. Se admiten parámetros como `charset`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                tipoNoSoportado:
+                  summary: Content-Type distinto de JSON
+                  value:
+                    type: about:blank
+                    title: Unsupported Media Type
+                    status: 415
+                    code: UNSUPPORTED_MEDIA_TYPE
+                    detail: Content-Type must be application/json
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+        '422':
+          description: La petición es válida pero incumple una regla de negocio. No se llama al proveedor ni se persiste nada.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                montoMinimo:
+                  summary: Monto menor o igual a 1.00
+                  value:
+                    type: about:blank
+                    title: Unprocessable Entity
+                    status: 422
+                    code: AMOUNT_BELOW_MINIMUM
+                    detail: amount must be greater than 1.00
+                    errors:
+                      - field: amount
+                        message: amount must be greater than 1.00
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+                limiteDebito:
+                  summary: DEBIT mayor a 10,000.00
+                  value:
+                    type: about:blank
+                    title: Unprocessable Entity
+                    status: 422
+                    code: DEBIT_AMOUNT_EXCEEDS_LIMIT
+                    detail: debit amount must not exceed 10000.00 per operation
+                    errors:
+                      - field: amount
+                        message: debit amount must not exceed 10000.00 per operation
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+                monedaNoSoportada:
+                  summary: Moneda distinta de MXN
+                  value:
+                    type: about:blank
+                    title: Unprocessable Entity
+                    status: 422
+                    code: UNSUPPORTED_CURRENCY
+                    detail: currency is not supported, only MXN is accepted
+                    errors:
+                      - field: currency
+                        message: currency is not supported, only MXN is accepted
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+                llaveReutilizada:
+                  summary: Idempotency-Key usada con otro cuerpo
+                  value:
+                    type: about:blank
+                    title: Unprocessable Entity
+                    status: 422
+                    code: IDEMPOTENCY_KEY_REUSED
+                    detail: idempotency key was already used with a different request
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          description: El proveedor respondió fuera del contrato. La transacción queda en `FAILED`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              examples:
+                respuestaInvalida:
+                  summary: Respuesta inválida del proveedor
+                  value:
+                    id: 01a1c807-b89c-7332-967a-a7f3171b16a4
+                    accountId: acc-down
+                    type: CREDIT
+                    amount: 100.00
+                    currency: MXN
+                    description: ''
+                    status: FAILED
+                    rejectionCode: PROVIDER_INVALID_RESPONSE
+                    rejectionMessage: the provider returned a response outside the contract
+                    createdAt: '2025-03-15T10:30:00Z'
+        '503':
+          description: No se pudo contactar al proveedor o el circuit breaker está abierto. La transacción queda en `FAILED`.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              examples:
+                proveedorNoDisponible:
+                  summary: Proveedor inalcanzable
+                  value:
+                    id: 01a1c807-b89c-7332-967a-a7f3171b16a5
+                    accountId: acc-123456
+                    type: CREDIT
+                    amount: 100.00
+                    currency: MXN
+                    description: ''
+                    status: FAILED
+                    rejectionCode: PROVIDER_UNAVAILABLE
+                    rejectionMessage: the provider could not be reached
+                    createdAt: '2025-03-15T10:30:00Z'
+        '504':
+          description: |
+            El proveedor no respondió a tiempo (cuerpo: la transacción en `FAILED`) o la petición completa
+            superó su tiempo máximo (cuerpo: un error con código `REQUEST_TIMEOUT`).
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              examples:
+                timeoutProveedor:
+                  summary: Timeout del proveedor
+                  value:
+                    id: 01a1c807-b89c-7332-967a-a7f3171b16a6
+                    accountId: acc-slow
+                    type: CREDIT
+                    amount: 100.00
+                    currency: MXN
+                    description: ''
+                    status: FAILED
+                    rejectionCode: PROVIDER_TIMEOUT
+                    rejectionMessage: the provider did not respond in time
+                    createdAt: '2025-03-15T10:30:00Z'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                timeoutPeticion:
+                  summary: Tiempo máximo de la petición superado
+                  value:
+                    type: about:blank
+                    title: Gateway Timeout
+                    status: 504
+                    code: REQUEST_TIMEOUT
+                    detail: the request took too long to complete
+                    requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+    get:
+      tags: [Transacciones]
+      operationId: listTransactions
+      summary: Consulta transacciones
+      description: |
+        Devuelve transacciones ordenadas de la más reciente a la más antigua (`createdAt` descendente,
+        con `id` como desempate). Todos los filtros son opcionales y se combinan con AND.
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - name: accountId
+          in: query
+          description: Filtra por cuenta.
+          schema:
+            type: string
+          example: acc-123456
+        - name: status
+          in: query
+          description: Filtra por estado.
+          schema:
+            $ref: '#/components/schemas/TransactionStatus'
+        - name: type
+          in: query
+          description: Filtra por tipo.
+          schema:
+            $ref: '#/components/schemas/TransactionType'
+        - name: page
+          in: query
+          description: Número de página, empezando en 1.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - name: limit
+          in: query
+          description: Tamaño de página.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Página de transacciones.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionList'
+              examples:
+                pagina:
+                  summary: Página con resultados
+                  value:
+                    data:
+                      - id: 01a1c807-b8e5-78d8-b34d-c2b82e7e305b
+                        accountId: acc-123456
+                        type: DEBIT
+                        amount: 250.75
+                        currency: MXN
+                        description: Pago de servicio
+                        status: EXECUTED
+                        providerTransactionId: txn-000002
+                        balanceAfter: 11249.25
+                        createdAt: '2025-03-15T10:31:00Z'
+                    page: 1
+                    limit: 1
+                    total: 2
+                vacia:
+                  summary: Sin resultados
+                  value:
+                    data: []
+                    page: 1
+                    limit: 20
+                    total: 0
+        '400':
+          description: Parámetros de consulta inválidos.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                paginaInvalida:
+                  summary: Página menor a 1
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: VALIDATION_ERROR
+                    detail: page must be between 1 and 100000
+                    errors:
+                      - field: page
+                        message: page must be between 1 and 100000
+                    requestId: 3f7a8bf7-a8b8-4d82-84ab-4bad740cfb06
+                limiteInvalido:
+                  summary: Límite fuera de rango
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: VALIDATION_ERROR
+                    detail: limit must be between 1 and 100
+                    errors:
+                      - field: limit
+                        message: limit must be between 1 and 100
+                    requestId: 3f7a8bf7-a8b8-4d82-84ab-4bad740cfb06
+                noNumerico:
+                  summary: Paginación no numérica
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: VALIDATION_ERROR
+                    detail: request has invalid query parameters
+                    errors:
+                      - field: page
+                        message: must be an integer
+                    requestId: 3f7a8bf7-a8b8-4d82-84ab-4bad740cfb06
+                estadoInvalido:
+                  summary: Estado desconocido
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: VALIDATION_ERROR
+                    detail: status must be PENDING, EXECUTED, REJECTED or FAILED
+                    errors:
+                      - field: status
+                        message: status must be PENDING, EXECUTED, REJECTED or FAILED
+                    requestId: 3f7a8bf7-a8b8-4d82-84ab-4bad740cfb06
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '504':
+          description: La consulta superó el tiempo máximo de la petición.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                timeoutPeticion:
+                  summary: Tiempo máximo superado
+                  value:
+                    type: about:blank
+                    title: Gateway Timeout
+                    status: 504
+                    code: REQUEST_TIMEOUT
+                    detail: the request took too long to complete
+                    requestId: 3f7a8bf7-a8b8-4d82-84ab-4bad740cfb06
+  /healthz:
+    get:
+      tags: [Salud]
+      operationId: getLiveness
+      summary: Liveness
+      description: Indica que el proceso está vivo. No verifica dependencias.
+      responses:
+        '200':
+          description: El proceso está vivo.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              examples:
+                vivo:
+                  summary: Proceso vivo
+                  value:
+                    status: ok
+  /readyz:
+    get:
+      tags: [Salud]
+      operationId: getReadiness
+      summary: Readiness
+      description: Indica si el servicio puede atender tráfico. Verifica la conexión a la base de datos.
+      responses:
+        '200':
+          description: El servicio puede atender tráfico.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              examples:
+                listo:
+                  summary: Servicio listo
+                  value:
+                    status: ready
+        '503':
+          description: La base de datos no responde.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              examples:
+                noDisponible:
+                  summary: Base de datos caída
+                  value:
+                    status: unavailable
+components:
+  parameters:
+    RequestIdHeader:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: |
+        Identificador de correlación. Si se envía (máximo 128 caracteres) se reutiliza en la respuesta
+        y en los logs; si no, el servicio genera uno.
+      schema:
+        type: string
+        maxLength: 128
+      example: req-abc-123
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Llave elegida por el cliente para poder reintentar sin duplicar la transacción.
+        - Misma llave y mismo cuerpo: se devuelve la transacción original (200 y `Idempotent-Replayed: true`).
+        - Misma llave y cuerpo distinto: 422 `IDEMPOTENCY_KEY_REUSED`.
+        - La petición original sigue en proceso: 409 `IDEMPOTENT_REQUEST_IN_PROGRESS`.
+      schema:
+        type: string
+        maxLength: 255
+      example: order-0001
+  headers:
+    X-Request-ID:
+      description: Identificador de correlación de la petición.
+      schema:
+        type: string
+      example: 34e2de5a-a68a-4647-9819-6da9fa230f52
+    Idempotent-Replayed:
+      description: Vale `true` cuando la respuesta corresponde a una transacción creada por una petición anterior.
+      schema:
+        type: string
+        enum: ['true']
+  responses:
+    InternalError:
+      description: Error inesperado. El detalle interno solo se registra en los logs.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            errorInterno:
+              summary: Error inesperado
+              value:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+                detail: an unexpected error occurred
+                requestId: 34e2de5a-a68a-4647-9819-6da9fa230f52
+  schemas:
+    TransactionType:
+      type: string
+      enum: [CREDIT, DEBIT]
+    TransactionStatus:
+      type: string
+      description: |
+        - `PENDING`: registrada, a la espera de la respuesta del proveedor.
+        - `EXECUTED`: aprobada y ejecutada por el proveedor.
+        - `REJECTED`: rechazada por el proveedor (rechazo de negocio).
+        - `FAILED`: fallo técnico; no se sabe si el proveedor la ejecutó.
+      enum: [PENDING, EXECUTED, REJECTED, FAILED]
+    CreateTransactionRequest:
+      type: object
+      additionalProperties: false
+      required: [accountId, type, amount, currency]
+      properties:
+        accountId:
+          type: string
+          minLength: 1
+          description: Cuenta sobre la que se ejecuta la transacción.
+          example: acc-123456
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        amount:
+          type: number
+          description: |
+            Monto con un máximo de dos decimales. Debe ser mayor a 1.00 y, para DEBIT, no mayor a 10,000.00.
+            No se aceptan cadenas ni notación exponencial.
+          example: 1500.00
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: Código ISO 4217 en mayúsculas. Solo se acepta MXN.
+          example: MXN
+        description:
+          type: string
+          maxLength: 255
+          description: Texto libre opcional. No se envía al proveedor.
+          example: Transferencia recibida
+    Transaction:
+      type: object
+      required: [id, accountId, type, amount, currency, description, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador de la transacción (UUID v7).
+        accountId:
+          type: string
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        amount:
+          type: number
+          description: Monto con dos decimales.
+        currency:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        providerTransactionId:
+          type: string
+          description: Identificador asignado por el proveedor. Solo presente en `EXECUTED`.
+        balanceAfter:
+          type: number
+          description: Saldo de la cuenta devuelto por el proveedor tras la ejecución. Solo presente en `EXECUTED`.
+        rejectionCode:
+          type: string
+          description: |
+            Código del rechazo del proveedor (`REJECTED`) o del fallo técnico (`FAILED`):
+            `PROVIDER_TIMEOUT`, `PROVIDER_UNAVAILABLE` o `PROVIDER_INVALID_RESPONSE`.
+        rejectionMessage:
+          type: string
+          description: Mensaje que acompaña a `rejectionCode`.
+        createdAt:
+          type: string
+          format: date-time
+          description: Fecha de creación en RFC 3339 UTC.
+    TransactionList:
+      type: object
+      required: [data, page, limit, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total de transacciones que cumplen los filtros.
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: Campo o parámetro que originó el error.
+        message:
+          type: string
+    Problem:
+      type: object
+      description: Error en formato RFC 7807 con campos adicionales.
+      required: [type, title, status, code, detail]
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          description: Texto estándar del código HTTP.
+        status:
+          type: integer
+          description: Código HTTP de la respuesta.
+        code:
+          type: string
+          description: Código estable para que el cliente decida qué hacer.
+          enum:
+            - INVALID_JSON
+            - VALIDATION_ERROR
+            - REQUEST_TOO_LARGE
+            - UNSUPPORTED_MEDIA_TYPE
+            - NOT_FOUND
+            - METHOD_NOT_ALLOWED
+            - AMOUNT_BELOW_MINIMUM
+            - DEBIT_AMOUNT_EXCEEDS_LIMIT
+            - UNSUPPORTED_CURRENCY
+            - IDEMPOTENCY_KEY_REUSED
+            - IDEMPOTENT_REQUEST_IN_PROGRESS
+            - REQUEST_TIMEOUT
+            - INTERNAL_ERROR
+        detail:
+          type: string
+          description: Explicación legible del error.
+        errors:
+          type: array
+          description: Detalle por campo, cuando aplica.
+          items:
+            $ref: '#/components/schemas/FieldError'
+        requestId:
+          type: string
+          description: Mismo valor que el header `X-Request-ID`.
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, ready, unavailable]

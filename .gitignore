@@ -1,0 +1,25 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Coverage
+coverage.out
+coverage.html
+*.coverprofile
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

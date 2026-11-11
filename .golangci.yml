@@ -1,0 +1,69 @@
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+  settings:
+    depguard:
+      rules:
+        domain:
+          list-mode: lax
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: github.com/vit3ro/transaction-execution-api/internal/adapters
+              desc: the domain must not depend on adapters
+            - pkg: github.com/vit3ro/transaction-execution-api/internal/application
+              desc: the domain must not depend on use cases
+            - pkg: github.com/vit3ro/transaction-execution-api/internal/ports
+              desc: the domain must not depend on ports
+            - pkg: github.com/vit3ro/transaction-execution-api/internal/config
+              desc: the domain must not depend on configuration
+        core:
+          list-mode: lax
+          files:
+            - "**/internal/application/**"
+            - "**/internal/ports/**"
+          deny:
+            - pkg: github.com/vit3ro/transaction-execution-api/internal/adapters
+              desc: use cases and ports must not depend on adapters
+            - pkg: github.com/vit3ro/transaction-execution-api/internal/config
+              desc: use cases and ports must not depend on configuration
+    gosec:
+      excludes:
+        - G404
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
