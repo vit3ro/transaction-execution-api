@@ -15,6 +15,8 @@ const (
 
 var errInvalidAmount = errors.New("amount must be a positive number with at most two decimal places")
 
+// A small copy of the cents parser on purpose: the mock shares only the HTTP
+// contract with the API and imports nothing from internal/.
 func parseCents(value string) (int64, error) {
 	unitsText, fractionText, hasFraction := strings.Cut(value, ".")
 	if !isDigits(unitsText) || len(unitsText) > maxUnitDigits {

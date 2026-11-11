@@ -28,6 +28,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /healthz", health.live)
 	mux.HandleFunc("GET /readyz", health.ready)
 
+	// Order matters: the request id comes first so every log line has it, and
+	// recovery sits inside logging so a panic is logged as a 500.
 	return chain(mux,
 		withRequestID,
 		withLogging(deps.Logger),

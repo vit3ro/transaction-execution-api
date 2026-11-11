@@ -225,3 +225,48 @@ func TestParseAndFormatCents(t *testing.T) {
 		t.Errorf("formatCents(150050) = %q, want 1500.50", got)
 	}
 }
+
+func TestLoadConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		t.Setenv(envPort, "")
+		t.Setenv(envInitialBalance, "")
+		t.Setenv(envSlowDelay, "")
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig returned unexpected error: %v", err)
+		}
+		want := config{port: "8081", initialBalance: 1000000, slowDelay: 5 * time.Second}
+		if cfg != want {
+			t.Errorf("config = %+v, want %+v", cfg, want)
+		}
+	})
+
+	t.Run("overrides", func(t *testing.T) {
+		t.Setenv(envPort, "9000")
+		t.Setenv(envInitialBalance, "250.50")
+		t.Setenv(envSlowDelay, "200ms")
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig returned unexpected error: %v", err)
+		}
+		want := config{port: "9000", initialBalance: 25050, slowDelay: 200 * time.Millisecond}
+		if cfg != want {
+			t.Errorf("config = %+v, want %+v", cfg, want)
+		}
+	})
+
+	t.Run("invalid values", func(t *testing.T) {
+		invalid := map[string]string{envInitialBalance: "ten thousand", envSlowDelay: "5"}
+		for name, value := range invalid {
+			t.Setenv(envInitialBalance, "")
+			t.Setenv(envSlowDelay, "")
+			t.Setenv(name, value)
+
+			if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("loadConfig with %s=%q returned %v, want an error naming the variable", name, value, err)
+			}
+		}
+	})
+}

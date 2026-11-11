@@ -145,11 +145,11 @@ curl -i -X POST http://localhost:8081/provider/v1/execute \
   -d '{"accountId":"acc-slow","type":"CREDIT","amount":100.00,"currency":"MXN"}'
 ```
 
-En PowerShell, usa `curl.exe` y comillas dobles escapadas, o ejecuta las peticiones desde [`requests.http`](requests.http).
+En PowerShell, usa `curl.exe` y comillas dobles escapadas, o ejecuta las peticiones desde la [colección de Postman](postman_collection.json).
 
 ## Pruebas contra la API
 
-El archivo [`requests.http`](requests.http) contiene los mismos escenarios, pero pasando por la API (`POST /transactions`), además de las reglas de negocio, el listado y la idempotencia. Se puede ejecutar con la extensión REST Client de VS Code o con el cliente HTTP de los IDE de JetBrains.
+La [colección de Postman](postman_collection.json) contiene los mismos escenarios, pero pasando por la API (`POST /transactions`), además de las reglas de negocio, el listado y la idempotencia. Cada petición incluye pruebas automáticas; se importa en Postman y se ejecuta completa con **Run collection**. La carpeta 8 llama al mock directamente.
 
 ## Logs
 

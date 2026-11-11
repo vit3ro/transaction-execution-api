@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -20,6 +21,8 @@ const (
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get(headerRequestID)
+		// Reuse the caller id to follow a request across services, but do not trust
+		// an oversized value in our logs.
 		if requestID == "" || len(requestID) > maxRequestIDLength {
 			requestID = uuid.NewString()
 		}
@@ -76,27 +79,31 @@ func withLogging(logger *slog.Logger) func(http.Handler) http.Handler {
 func withRecovery(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
-				recovered := recover()
-				if recovered == nil {
-					return
-				}
-				if recovered == http.ErrAbortHandler {
-					panic(recovered)
-				}
-				logger.ErrorContext(r.Context(), "panic recovered",
-					"method", r.Method,
-					"path", r.URL.Path,
-					"panic", recovered,
-					"stack", string(debug.Stack()),
-				)
-				writeProblem(w, r, http.StatusInternalServerError, codeInternalError, "an unexpected error occurred")
-			}()
+			defer recoverPanic(w, r, logger)
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
+func recoverPanic(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+	recovered := recover()
+	if recovered == nil {
+		return
+	}
+	if err, isError := recovered.(error); isError && errors.Is(err, http.ErrAbortHandler) {
+		panic(recovered)
+	}
+	logger.ErrorContext(r.Context(), "panic recovered",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"panic", recovered,
+		"stack", string(debug.Stack()),
+	)
+	writeProblem(w, r, http.StatusInternalServerError, codeInternalError, "an unexpected error occurred")
+}
+
+// The deadline travels in the context instead of using http.TimeoutHandler,
+// so a timeout is still answered in our own error format.
 func withTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if timeout <= 0 {

@@ -17,6 +17,8 @@ var (
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
 )
 
+// ValidationError carries the field plus one of the sentinel errors above, so
+// callers can use errors.Is for the rule and errors.As for the field.
 type ValidationError struct {
 	Field string
 	Rule  error

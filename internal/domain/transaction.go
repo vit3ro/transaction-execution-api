@@ -51,6 +51,8 @@ const (
 )
 
 var (
+	// The minimum is exclusive (1.00 is rejected, 1.01 passes) and the debit
+	// limit is inclusive (10,000.00 passes, 10,000.01 is rejected).
 	minAmountExclusive = NewMoneyFromCents(1_00)
 	maxDebitAmount     = NewMoneyFromCents(10_000_00)
 )
@@ -64,12 +66,13 @@ type Transaction struct {
 	Description           string
 	Status                TransactionStatus
 	ProviderTransactionID string
-	BalanceAfter          *Money
-	RejectionCode         string
-	RejectionMessage      string
-	IdempotencyKey        string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// Pointer because 0.00 is a valid balance; nil means the provider gave none.
+	BalanceAfter     *Money
+	RejectionCode    string
+	RejectionMessage string
+	IdempotencyKey   string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type NewTransactionParams struct {
@@ -130,6 +133,8 @@ func (t *Transaction) MarkFailed(code, message string, at time.Time) error {
 	return nil
 }
 
+// Only PENDING can move. Final states are immutable, so a late or repeated
+// provider answer can never rewrite a transaction that is already resolved.
 func (t *Transaction) transitionTo(next TransactionStatus, at time.Time) error {
 	if t.Status != TransactionStatusPending {
 		return &InvalidTransitionError{From: t.Status, To: next}
@@ -164,6 +169,8 @@ func validate(params NewTransactionParams) error {
 	return nil
 }
 
+// PostgreSQL stores microseconds. Truncating here keeps what we return equal
+// to what we read back from the database.
 func normalizeTime(value time.Time) time.Time {
 	return value.UTC().Truncate(time.Microsecond)
 }

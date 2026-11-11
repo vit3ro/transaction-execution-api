@@ -46,6 +46,8 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Behind a flag: handy for local runs, but in production a schema change
+	// should be its own deploy step.
 	if cfg.Database.RunMigrations {
 		if err := postgres.Migrate(cfg.Database.URL); err != nil {
 			return err
@@ -55,8 +57,8 @@ func run() error {
 
 	pool, err := postgres.NewPool(ctx, postgres.Config{
 		DatabaseURL:     cfg.Database.URL,
-		MaxConns:        int32(cfg.Database.MaxConns),
-		MinConns:        int32(cfg.Database.MinConns),
+		MaxConns:        cfg.Database.MaxConns,
+		MinConns:        cfg.Database.MinConns,
 		MaxConnLifetime: cfg.Database.MaxConnLifetime,
 		MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
 	})
@@ -96,9 +98,9 @@ func providerConfig(cfg config.Provider) providerclient.Config {
 		MaxIdleConns:               cfg.MaxIdleConns,
 		MaxIdleConnsPerHost:        cfg.MaxIdleConnsPerHost,
 		IdleConnTimeout:            cfg.IdleConnTimeout,
-		BreakerFailureThreshold:    uint32(cfg.BreakerFailureThreshold),
+		BreakerFailureThreshold:    cfg.BreakerFailureThreshold,
 		BreakerOpenTimeout:         cfg.BreakerOpenTimeout,
-		BreakerHalfOpenMaxRequests: uint32(cfg.BreakerHalfOpenMaxRequests),
+		BreakerHalfOpenMaxRequests: cfg.BreakerHalfOpenMaxRequests,
 	}
 }
 
@@ -108,8 +110,10 @@ func newServer(cfg config.HTTP, handler http.Handler) *http.Server {
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
-		WriteTimeout:      cfg.RequestTimeout + writeTimeoutMargin,
-		IdleTimeout:       idleTimeout,
+		// Slightly above the request timeout, so our own 504 is written before the
+		// server closes the connection.
+		WriteTimeout: cfg.RequestTimeout + writeTimeoutMargin,
+		IdleTimeout:  idleTimeout,
 	}
 }
 
@@ -127,7 +131,9 @@ func serve(ctx context.Context, server *http.Server, shutdownTimeout time.Durati
 		logger.Info("shutdown signal received, waiting for in-flight requests")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	// ctx is already cancelled by the signal, so the wait for in-flight requests
+	// needs its own deadline.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {

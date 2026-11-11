@@ -62,6 +62,8 @@ func (c *Client) Execute(ctx context.Context, request ports.ProviderRequest) (po
 		return ports.ProviderResult{}, fmt.Errorf("encode provider request: %w", err)
 	}
 
+	// One deadline for the whole call, retries and waits included, so the worst
+	// case latency is known.
 	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 
@@ -123,10 +125,13 @@ func newHTTPClient(config Config) *http.Client {
 			DialContext:         dialer.DialContext,
 			TLSHandshakeTimeout: config.DialTimeout,
 			MaxIdleConns:        config.MaxIdleConns,
+			// Go keeps only 2 idle connections per host by default. With a single
+			// provider host that would mean reconnecting on almost every request.
 			MaxIdleConnsPerHost: config.MaxIdleConnsPerHost,
 			IdleConnTimeout:     config.IdleConnTimeout,
 			ForceAttemptHTTP2:   true,
 		},
+		// Never follow a redirect on a request that moves money.
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -138,9 +143,12 @@ func newBreaker(config Config, logger *slog.Logger) *gobreaker.CircuitBreaker[po
 		Name:        breakerName,
 		MaxRequests: config.BreakerHalfOpenMaxRequests,
 		Timeout:     config.BreakerOpenTimeout,
+		// A business rejection returns no error, so it counts as a success: the
+		// provider is working. Only technical failures open the breaker.
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
 			return counts.ConsecutiveFailures >= config.BreakerFailureThreshold
 		},
+		// A client that hangs up says nothing about the provider health.
 		IsExcluded: func(err error) bool {
 			return errors.Is(err, context.Canceled)
 		},

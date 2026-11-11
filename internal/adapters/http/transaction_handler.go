@@ -17,6 +17,8 @@ const (
 	headerIdempotentReplayed = "Idempotent-Replayed"
 )
 
+// A malformed request is a 400. These three are valid requests that break a
+// business rule, so they are a 422 with a stable code.
 var businessRuleCodes = map[error]string{
 	domain.ErrAmountBelowMinimum:      codeAmountBelowMinimum,
 	domain.ErrDebitAmountExceedsLimit: codeDebitAmountExceedsLimit,
@@ -77,6 +79,9 @@ func (h *transactionHandler) writeExecution(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, executionStatusCode(result), toTransactionResponse(result.Transaction))
 }
 
+// A provider rejection is still a 201: the transaction was created and
+// recorded, and the client reads the result in status. A technical failure
+// maps to a gateway error but still returns the transaction.
 func executionStatusCode(result application.ExecuteTransactionResult) int {
 	if result.Transaction.Status == domain.TransactionStatusFailed {
 		if status, known := failureStatusCodes[result.Transaction.RejectionCode]; known {
@@ -143,6 +148,7 @@ func (h *transactionHandler) writeError(w http.ResponseWriter, r *http.Request, 
 		h.logFailure(r, slog.LevelWarn, "request timed out", err)
 		writeProblem(w, r, http.StatusGatewayTimeout, codeRequestTimeout, "the request took too long to complete")
 	default:
+		// Unknown errors get a generic message; the detail stays in the log.
 		h.logFailure(r, slog.LevelError, "request failed", err)
 		writeProblem(w, r, http.StatusInternalServerError, codeInternalError, "an unexpected error occurred")
 	}

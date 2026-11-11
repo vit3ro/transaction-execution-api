@@ -29,8 +29,8 @@ type HTTP struct {
 
 type Database struct {
 	URL             string
-	MaxConns        int
-	MinConns        int
+	MaxConns        int32
+	MinConns        int32
 	MaxConnLifetime time.Duration
 	MaxConnIdleTime time.Duration
 	RunMigrations   bool
@@ -49,13 +49,14 @@ type Provider struct {
 	MaxIdleConnsPerHost int
 	IdleConnTimeout     time.Duration
 
-	BreakerFailureThreshold    int
+	BreakerFailureThreshold    uint32
 	BreakerOpenTimeout         time.Duration
-	BreakerHalfOpenMaxRequests int
+	BreakerHalfOpenMaxRequests uint32
 }
 
 type LookupFunc func(name string) (string, bool)
 
+// Load reports every problem at once, so a bad deploy is fixed in one pass.
 func Load(lookup LookupFunc) (Config, error) {
 	env := &reader{lookup: lookup}
 
@@ -68,8 +69,8 @@ func Load(lookup LookupFunc) (Config, error) {
 		},
 		Database: Database{
 			URL:             env.required("DATABASE_URL"),
-			MaxConns:        env.integer("DB_MAX_CONNS", 20),
-			MinConns:        env.integer("DB_MIN_CONNS", 2),
+			MaxConns:        env.int32("DB_MAX_CONNS", 20),
+			MinConns:        env.int32("DB_MIN_CONNS", 2),
 			MaxConnLifetime: env.duration("DB_MAX_CONN_LIFETIME", 30*time.Minute),
 			MaxConnIdleTime: env.duration("DB_MAX_CONN_IDLE_TIME", 5*time.Minute),
 			RunMigrations:   env.boolean("RUN_MIGRATIONS", false),
@@ -84,9 +85,9 @@ func Load(lookup LookupFunc) (Config, error) {
 			MaxIdleConns:               env.integer("PROVIDER_MAX_IDLE_CONNS", 100),
 			MaxIdleConnsPerHost:        env.integer("PROVIDER_MAX_IDLE_CONNS_PER_HOST", 100),
 			IdleConnTimeout:            env.duration("PROVIDER_IDLE_CONN_TIMEOUT", 90*time.Second),
-			BreakerFailureThreshold:    env.integer("PROVIDER_BREAKER_FAILURE_THRESHOLD", 5),
+			BreakerFailureThreshold:    env.uint32("PROVIDER_BREAKER_FAILURE_THRESHOLD", 5),
 			BreakerOpenTimeout:         env.duration("PROVIDER_BREAKER_OPEN_TIMEOUT", 30*time.Second),
-			BreakerHalfOpenMaxRequests: env.integer("PROVIDER_BREAKER_HALF_OPEN_MAX_REQUESTS", 1),
+			BreakerHalfOpenMaxRequests: env.uint32("PROVIDER_BREAKER_HALF_OPEN_MAX_REQUESTS", 1),
 		},
 	}
 
@@ -120,6 +121,8 @@ func (c Config) validate() []error {
 	check(c.Provider.BaseURL == "" || isURL(c.Provider.BaseURL, "http", "https"),
 		"PROVIDER_BASE_URL must be an http:// or https:// URL")
 	check(c.Provider.RequestTimeout > 0, "PROVIDER_REQUEST_TIMEOUT must be positive")
+	// The provider must time out first; otherwise the request deadline would cut
+	// the call before we can record a clean FAILED.
 	check(c.Provider.RequestTimeout < c.HTTP.RequestTimeout || c.HTTP.RequestTimeout <= 0,
 		"PROVIDER_REQUEST_TIMEOUT must be lower than HTTP_REQUEST_TIMEOUT")
 	check(c.Provider.DialTimeout > 0, "PROVIDER_DIAL_TIMEOUT must be positive")
@@ -223,4 +226,30 @@ func (r *reader) logLevel(name string, fallback slog.Level) slog.Level {
 		return fallback
 	}
 	return level
+}
+
+func (r *reader) int32(name string, fallback int32) int32 {
+	value, ok := r.value(name)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		r.fail(name, "must be an integer")
+		return fallback
+	}
+	return int32(parsed)
+}
+
+func (r *reader) uint32(name string, fallback uint32) uint32 {
+	value, ok := r.value(name)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		r.fail(name, "must be a non-negative integer")
+		return fallback
+	}
+	return uint32(parsed)
 }

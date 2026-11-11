@@ -13,6 +13,8 @@ const (
 	maxParsableUnits  = (math.MaxInt64 - (centsPerUnit - 1)) / centsPerUnit
 )
 
+// Money is kept as integer cents. There is no float anywhere in the service,
+// so an amount is always exactly what the client sent.
 type Money struct {
 	cents int64
 }
@@ -21,6 +23,8 @@ func NewMoneyFromCents(cents int64) Money {
 	return Money{cents: cents}
 }
 
+// ParseMoney rejects more than two decimals instead of rounding. Changing an
+// amount silently is worse than returning an error.
 func ParseMoney(value string) (Money, error) {
 	unsigned, negative := strings.CutPrefix(value, "-")
 	unitsText, fractionText, hasFraction := strings.Cut(unsigned, ".")

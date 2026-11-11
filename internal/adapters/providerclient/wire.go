@@ -31,6 +31,8 @@ type executeResponse struct {
 	Message       string      `json:"message"`
 }
 
+// json.Number writes the amount exactly as text (1500.00), with no float
+// conversion. The description is not part of the provider contract.
 func encodeRequest(request ports.ProviderRequest) ([]byte, error) {
 	return json.Marshal(executeRequest{
 		AccountID: request.AccountID,
@@ -40,6 +42,8 @@ func encodeRequest(request ports.ProviderRequest) ([]byte, error) {
 	})
 }
 
+// Any 4XX or 5XX with a valid contract body is a business rejection, even a
+// 500. Everything else is an invalid response and becomes a technical failure.
 func decodeResponse(statusCode int, body []byte) (ports.ProviderResult, error) {
 	var response executeResponse
 	if err := json.Unmarshal(body, &response); err != nil {

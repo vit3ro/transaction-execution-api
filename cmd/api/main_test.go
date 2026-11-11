@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,5 +155,62 @@ func TestNewServer_DerivesTimeoutsFromConfig(t *testing.T) {
 	}
 	if server.ReadHeaderTimeout <= 0 || server.IdleTimeout <= 0 {
 		t.Error("server must set header and idle timeouts")
+	}
+}
+
+func TestRun_FailsFastOnInvalidConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("PROVIDER_BASE_URL", "")
+	t.Setenv("HTTP_PORT", "not-a-port")
+
+	err := run()
+
+	if err == nil {
+		t.Fatal("run must fail before starting anything when the configuration is invalid")
+	}
+	for _, want := range []string{"DATABASE_URL is required", "PROVIDER_BASE_URL is required", "HTTP_PORT must be an integer"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+func TestRun_FailsWhenTheDatabaseIsUnreachable(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://user:secret-password@"+freeAddress(t)+"/transactions?sslmode=disable&connect_timeout=2")
+	t.Setenv("PROVIDER_BASE_URL", "http://localhost:8081")
+	t.Setenv("RUN_MIGRATIONS", "false")
+
+	err := run()
+
+	if err == nil {
+		t.Fatal("run must fail when the database cannot be reached")
+	}
+	if strings.Contains(err.Error(), "secret-password") {
+		t.Errorf("error leaks the database password: %v", err)
+	}
+}
+
+func TestProviderConfig_MapsEveryField(t *testing.T) {
+	source := config.Provider{
+		BaseURL:                    "http://provider.internal",
+		RequestTimeout:             3 * time.Second,
+		DialTimeout:                time.Second,
+		MaxRetries:                 2,
+		RetryBaseDelay:             100 * time.Millisecond,
+		RetryMaxDelay:              time.Second,
+		MaxIdleConns:               100,
+		MaxIdleConnsPerHost:        50,
+		IdleConnTimeout:            90 * time.Second,
+		BreakerFailureThreshold:    5,
+		BreakerOpenTimeout:         30 * time.Second,
+		BreakerHalfOpenMaxRequests: 1,
+	}
+
+	mapped := reflect.ValueOf(providerConfig(source))
+
+	for index := range mapped.NumField() {
+		if mapped.Field(index).IsZero() {
+			t.Errorf("provider client field %s was left unset", mapped.Type().Field(index).Name)
+		}
 	}
 }

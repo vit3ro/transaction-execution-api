@@ -28,6 +28,7 @@ type contextHandler struct {
 	slog.Handler
 }
 
+// Adds the request id from the context, so no caller has to pass it by hand.
 func (h *contextHandler) Handle(ctx context.Context, record slog.Record) error {
 	if requestID := RequestID(ctx); requestID != "" {
 		record.AddAttrs(slog.String(requestIDAttr, requestID))

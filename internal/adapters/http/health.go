@@ -26,6 +26,8 @@ func (h *healthHandler) live(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 }
 
+// Readiness checks the database; liveness does not, so a database outage
+// takes the instance out of rotation without restarting it.
 func (h *healthHandler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
 	defer cancel()

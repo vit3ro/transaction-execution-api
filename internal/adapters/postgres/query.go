@@ -7,6 +7,8 @@ import (
 	"github.com/vit3ro/transaction-execution-api/internal/ports"
 )
 
+// Amounts travel as text in both directions (::text here, ::numeric on
+// insert) so they never go through a float. NULLs are read as empty strings.
 const transactionColumns = `id, account_id, type, amount::text, currency, description, status,
 	COALESCE(provider_transaction_id, ''), balance_after::text,
 	COALESCE(rejection_code, ''), COALESCE(rejection_message, ''),
@@ -37,6 +39,8 @@ UPDATE transactions SET
 	updated_at = $7
 WHERE id = $1`
 
+// id breaks ties between rows created in the same microsecond, so pages are
+// stable. The indexes end in the same two columns.
 const listOrder = " ORDER BY created_at DESC, id DESC"
 
 type whereClause struct {
@@ -58,6 +62,7 @@ func newWhereClause(filter ports.TransactionFilter) whereClause {
 	return where
 }
 
+// Column names come from our own code; user values always go as parameters.
 func (w *whereClause) add(column string, value any) {
 	w.args = append(w.args, value)
 	w.conditions = append(w.conditions, fmt.Sprintf("%s = $%d", column, len(w.args)))
@@ -81,6 +86,8 @@ func countQuery(where whereClause) (string, []any) {
 	return "SELECT count(*) FROM transactions" + where.sql(), where.args
 }
 
+// When a page is not full the total is already known (offset + rows), so we
+// skip a count(*) that is expensive on a large table.
 func deduceTotal(rows int, pagination ports.Pagination) (total int64, known bool) {
 	offset := pagination.Offset()
 	if rows == 0 && offset > 0 {

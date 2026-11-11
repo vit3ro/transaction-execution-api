@@ -1,0 +1,1682 @@
+{
+  "info": {
+    "name": "Transaction Execution API",
+    "description": "Colección para probar la API de ejecución de transacciones contra el entorno local (docker compose up -d --build --wait).\n\nCada petición incluye pruebas automáticas. Se puede ejecutar completa con el Collection Runner o con Newman.\n\nVariables: baseUrl (API), providerUrl (mock del proveedor) y accountId (se genera una cuenta nueva la primera vez).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Salud",
+      "description": "Verificaciones de liveness y readiness.",
+      "item": [
+        {
+          "name": "Liveness",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status = ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "El proceso está vivo."
+          }
+        },
+        {
+          "name": "Readiness",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status = ready\", () => pm.expect(pm.response.json().status).to.eql(\"ready\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            },
+            "description": "Verifica la conexión a la base de datos."
+          }
+        },
+        {
+          "name": "X-Request-ID enviado por el cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"reutiliza el X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.eql(\"SPIN-REQ-001\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "SPIN-REQ-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "El identificador se reutiliza en la respuesta."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Ejecutar transacción",
+      "description": "POST /transactions con los dos tipos soportados.",
+      "item": [
+        {
+          "name": "Crédito exitoso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = EXECUTED\", () => pm.expect(pm.response.json().status).to.eql(\"EXECUTED\"));",
+                  "pm.test(\"type = CREDIT\", () => pm.expect(pm.response.json().type).to.eql(\"CREDIT\"));",
+                  "pm.test(\"trae providerTransactionId y balanceAfter\", () => { const b = pm.response.json(); pm.expect(b.providerTransactionId).to.be.a(\"string\").and.not.empty; pm.expect(b.balanceAfter).to.be.a(\"number\"); });",
+                  "pm.test(\"createdAt en RFC 3339 UTC\", () => pm.expect(pm.response.json().createdAt).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$/));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 1500.00,\n  \"currency\": \"MXN\",\n  \"description\": \"Transferencia recibida\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Cuerpo del ejemplo del challenge."
+          }
+        },
+        {
+          "name": "Débito exitoso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = EXECUTED\", () => pm.expect(pm.response.json().status).to.eql(\"EXECUTED\"));",
+                  "pm.test(\"type = DEBIT\", () => pm.expect(pm.response.json().type).to.eql(\"DEBIT\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"DEBIT\",\n  \"amount\": 250.75,\n  \"currency\": \"MXN\",\n  \"description\": \"Pago de servicio en OXXO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "El saldo devuelto por el proveedor baja."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Validación del request",
+      "description": "Paso 1 del flujo: forma de la petición. Responde 400.",
+      "item": [
+        {
+          "name": "Campos faltantes e inválidos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = VALIDATION_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_ERROR\"));",
+                  "pm.test(\"detalle por campo\", () => pm.expect(pm.response.json().errors).to.be.an(\"array\").and.not.empty);",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"\",\n  \"type\": \"TRANSFER\",\n  \"amount\": 10.001\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Devuelve un error por cada campo."
+          }
+        },
+        {
+          "name": "Campo desconocido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = VALIDATION_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_ERROR\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\",\n  \"balance\": 999999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "El JSON es estricto."
+          }
+        },
+        {
+          "name": "Monto como cadena",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = VALIDATION_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_ERROR\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": \"100.00\",\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "El monto debe ser un número JSON."
+          }
+        },
+        {
+          "name": "JSON malformado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = INVALID_JSON\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_JSON\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Cuerpo que no es JSON válido."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Reglas de negocio",
+      "description": "Se validan antes de llamar al proveedor. Si fallan, responde 422 y no se ejecuta ni se guarda nada.",
+      "item": [
+        {
+          "name": "Monto mínimo: 1.00 se rechaza",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code = AMOUNT_BELOW_MINIMUM\", () => pm.expect(pm.response.json().code).to.eql(\"AMOUNT_BELOW_MINIMUM\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"no trae id de transaccion\", () => pm.expect(pm.response.json()).to.not.have.property(\"id\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 1.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "El monto debe ser mayor a 1.00."
+          }
+        },
+        {
+          "name": "Monto mínimo: 1.01 se acepta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = EXECUTED\", () => pm.expect(pm.response.json().status).to.eql(\"EXECUTED\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 1.01,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Primer monto válido."
+          }
+        },
+        {
+          "name": "DEBIT mayor a 10,000.00 se rechaza",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code = DEBIT_AMOUNT_EXCEEDS_LIMIT\", () => pm.expect(pm.response.json().code).to.eql(\"DEBIT_AMOUNT_EXCEEDS_LIMIT\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"no trae id de transaccion\", () => pm.expect(pm.response.json()).to.not.have.property(\"id\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"DEBIT\",\n  \"amount\": 10000.01,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Límite por operación para débitos."
+          }
+        },
+        {
+          "name": "DEBIT de 10,000.00 se acepta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = EXECUTED\", () => pm.expect(pm.response.json().status).to.eql(\"EXECUTED\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"DEBIT\",\n  \"amount\": 10000.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "El límite es inclusivo."
+          }
+        },
+        {
+          "name": "CREDIT sin límite",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = EXECUTED\", () => pm.expect(pm.response.json().status).to.eql(\"EXECUTED\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 5000000.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Los créditos no tienen máximo."
+          }
+        },
+        {
+          "name": "Moneda distinta de MXN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code = UNSUPPORTED_CURRENCY\", () => pm.expect(pm.response.json().code).to.eql(\"UNSUPPORTED_CURRENCY\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"no trae id de transaccion\", () => pm.expect(pm.response.json()).to.not.have.property(\"id\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"USD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Solo se acepta MXN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Respuestas del proveedor",
+      "description": "Cuentas especiales del mock. El resultado queda reflejado en la transacción persistida.",
+      "item": [
+        {
+          "name": "Saldo insuficiente (proveedor 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = REJECTED\", () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));",
+                  "pm.test(\"rejectionCode = INSUFFICIENT_FUNDS\", () => pm.expect(pm.response.json().rejectionCode).to.eql(\"INSUFFICIENT_FUNDS\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-insufficient\",\n  \"type\": \"DEBIT\",\n  \"amount\": 500.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Rechazo de negocio."
+          }
+        },
+        {
+          "name": "Cuenta bloqueada (proveedor 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = REJECTED\", () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));",
+                  "pm.test(\"rejectionCode = ACCOUNT_BLOCKED\", () => pm.expect(pm.response.json().rejectionCode).to.eql(\"ACCOUNT_BLOCKED\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-blocked\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Rechazo de negocio."
+          }
+        },
+        {
+          "name": "Error 500 con cuerpo del contrato",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = REJECTED\", () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));",
+                  "pm.test(\"rejectionCode = INTERNAL_ERROR\", () => pm.expect(pm.response.json().rejectionCode).to.eql(\"INTERNAL_ERROR\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-error\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Un 5XX con cuerpo válido es un rechazo, no un fallo técnico."
+          }
+        },
+        {
+          "name": "Proveedor caído (503 sin cuerpo válido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 502\", () => pm.response.to.have.status(502));",
+                  "pm.test(\"status = FAILED\", () => pm.expect(pm.response.json().status).to.eql(\"FAILED\"));",
+                  "pm.test(\"rejectionCode = PROVIDER_INVALID_RESPONSE\", () => pm.expect(pm.response.json().rejectionCode).to.eql(\"PROVIDER_INVALID_RESPONSE\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-down\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Fallo técnico."
+          }
+        },
+        {
+          "name": "Respuesta 200 con JSON inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 502\", () => pm.response.to.have.status(502));",
+                  "pm.test(\"status = FAILED\", () => pm.expect(pm.response.json().status).to.eql(\"FAILED\"));",
+                  "pm.test(\"rejectionCode = PROVIDER_INVALID_RESPONSE\", () => pm.expect(pm.response.json().rejectionCode).to.eql(\"PROVIDER_INVALID_RESPONSE\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-garbage\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Fallo técnico."
+          }
+        },
+        {
+          "name": "Timeout del proveedor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 504\", () => pm.response.to.have.status(504));",
+                  "pm.test(\"status = FAILED\", () => pm.expect(pm.response.json().status).to.eql(\"FAILED\"));",
+                  "pm.test(\"rejectionCode = PROVIDER_TIMEOUT\", () => pm.expect(pm.response.json().rejectionCode).to.eql(\"PROVIDER_TIMEOUT\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-slow\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Tarda unos 3 segundos."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Idempotencia",
+      "description": "Header opcional Idempotency-Key. Ejecutar las tres peticiones en orden.",
+      "item": [
+        {
+          "name": "Primera petición con Idempotency-Key",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"idempotencyKey\", \"SPIN-ORDER-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status = EXECUTED\", () => pm.expect(pm.response.json().status).to.eql(\"EXECUTED\"));",
+                  "pm.collectionVariables.set(\"idempotentTransactionId\", pm.response.json().id);",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 300.00,\n  \"currency\": \"MXN\",\n  \"description\": \"Recarga Spin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Crea la transacción. Genera una llave nueva en cada corrida."
+          }
+        },
+        {
+          "name": "Repetición con la misma llave y el mismo cuerpo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"misma transaccion\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"idempotentTransactionId\")));",
+                  "pm.test(\"Idempotent-Replayed = true\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 300.00,\n  \"currency\": \"MXN\",\n  \"description\": \"Recarga Spin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Devuelve la transacción original sin ejecutar otra vez."
+          }
+        },
+        {
+          "name": "Misma llave con otro cuerpo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code = IDEMPOTENCY_KEY_REUSED\", () => pm.expect(pm.response.json().code).to.eql(\"IDEMPOTENCY_KEY_REUSED\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 999.00,\n  \"currency\": \"MXN\",\n  \"description\": \"Recarga Spin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "La llave ya pertenece a otra petición."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Consultar transacciones",
+      "description": "GET /transactions con filtros y paginación.",
+      "item": [
+        {
+          "name": "Todas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            },
+            "description": "Sin filtros."
+          }
+        },
+        {
+          "name": "Por cuenta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"solo la cuenta pedida\", () => pm.response.json().data.forEach(t => pm.expect(t.accountId).to.eql(pm.collectionVariables.get(\"accountId\"))));",
+                  "pm.test(\"mas reciente primero\", () => { const d = pm.response.json().data.map(t => t.createdAt); pm.expect(d).to.eql([...d].sort().reverse()); });",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?accountId={{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                }
+              ]
+            },
+            "description": "Historial de la cuenta de la corrida."
+          }
+        },
+        {
+          "name": "Por estado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"solo REJECTED\", () => pm.response.json().data.forEach(t => pm.expect(t.status).to.eql(\"REJECTED\")));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?status=REJECTED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "REJECTED"
+                }
+              ]
+            },
+            "description": "Solo rechazadas."
+          }
+        },
+        {
+          "name": "Por tipo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"solo DEBIT\", () => pm.response.json().data.forEach(t => pm.expect(t.type).to.eql(\"DEBIT\")));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?type=DEBIT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "DEBIT"
+                }
+              ]
+            },
+            "description": "Solo débitos."
+          }
+        },
+        {
+          "name": "Filtros combinados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"cumple los tres filtros\", () => pm.response.json().data.forEach(t => { pm.expect(t.type).to.eql(\"DEBIT\"); pm.expect(t.status).to.eql(\"EXECUTED\"); }));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?accountId={{accountId}}&type=DEBIT&status=EXECUTED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                },
+                {
+                  "key": "type",
+                  "value": "DEBIT"
+                },
+                {
+                  "key": "status",
+                  "value": "EXECUTED"
+                }
+              ]
+            },
+            "description": "Cuenta, tipo y estado."
+          }
+        },
+        {
+          "name": "Paginación: página 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"page 1, limit 2\", () => { const b = pm.response.json(); pm.expect(b.page).to.eql(1); pm.expect(b.limit).to.eql(2); pm.expect(b.data.length).to.be.at.most(2); });",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?accountId={{accountId}}&page=1&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Dos elementos por página."
+          }
+        },
+        {
+          "name": "Paginación: página 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"estructura data/page/limit/total\", () => { const b = pm.response.json(); pm.expect(b.data).to.be.an(\"array\"); pm.expect(b).to.include.keys(\"page\", \"limit\", \"total\"); });",
+                  "pm.test(\"page 2\", () => pm.expect(pm.response.json().page).to.eql(2));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?accountId={{accountId}}&page=2&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "2"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Siguiente página con el mismo total."
+          }
+        },
+        {
+          "name": "Página inválida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = VALIDATION_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_ERROR\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?page=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "page debe estar entre 1 y 100000."
+          }
+        },
+        {
+          "name": "Límite inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = VALIDATION_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_ERROR\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?limit=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "limit debe estar entre 1 y 100."
+          }
+        },
+        {
+          "name": "Estado inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code = VALIDATION_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_ERROR\"));",
+                  "pm.test(\"formato problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));",
+                  "pm.test(\"incluye X-Request-ID\", () => pm.expect(pm.response.headers.get(\"X-Request-ID\")).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions?status=APPROVED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "APPROVED"
+                }
+              ]
+            },
+            "description": "status fuera del enum."
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Mock del proveedor (directo)",
+      "description": "Contrato POST /provider/v1/execute, sin pasar por la API.",
+      "item": [
+        {
+          "name": "Aprobada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status = APPROVED\", () => pm.expect(pm.response.json().status).to.eql(\"APPROVED\"));",
+                  "pm.test(\"trae transactionId, balance y executedAt\", () => pm.expect(pm.response.json()).to.include.keys(\"transactionId\", \"balance\", \"executedAt\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{providerUrl}}/provider/v1/execute",
+              "host": [
+                "{{providerUrl}}"
+              ],
+              "path": [
+                "provider",
+                "v1",
+                "execute"
+              ]
+            },
+            "description": "Respuesta exitosa del contrato."
+          }
+        },
+        {
+          "name": "Rechazada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"status = REJECTED\", () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));",
+                  "pm.test(\"code = INSUFFICIENT_FUNDS\", () => pm.expect(pm.response.json().code).to.eql(\"INSUFFICIENT_FUNDS\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-insufficient\",\n  \"type\": \"DEBIT\",\n  \"amount\": 500.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{providerUrl}}/provider/v1/execute",
+              "host": [
+                "{{providerUrl}}"
+              ],
+              "path": [
+                "provider",
+                "v1",
+                "execute"
+              ]
+            },
+            "description": "Respuesta fallida del contrato."
+          }
+        },
+        {
+          "name": "Error 500 con cuerpo del contrato",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 500\", () => pm.response.to.have.status(500));",
+                  "pm.test(\"status = REJECTED\", () => pm.expect(pm.response.json().status).to.eql(\"REJECTED\"));",
+                  "pm.test(\"code = INTERNAL_ERROR\", () => pm.expect(pm.response.json().code).to.eql(\"INTERNAL_ERROR\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"acc-error\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100.00,\n  \"currency\": \"MXN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{providerUrl}}/provider/v1/execute",
+              "host": [
+                "{{providerUrl}}"
+              ],
+              "path": [
+                "provider",
+                "v1",
+                "execute"
+              ]
+            },
+            "description": "Fallo 5XX con cuerpo válido."
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get(\"accountId\")) {",
+          "    pm.collectionVariables.set(\"accountId\", \"SPIN-USER-\" + Date.now());",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "providerUrl",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "accountId",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "idempotentTransactionId",
+      "value": ""
+    }
+  ]
+}

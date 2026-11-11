@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/vit3ro/transaction-execution-api/internal/application"
@@ -100,6 +101,8 @@ func TestListTransactions_RejectsInvalidInput(t *testing.T) {
 	}{
 		{"page zero", application.ListTransactionsInput{Page: intPtr(0)}, application.ErrInvalidPage, "page"},
 		{"negative page", application.ListTransactionsInput{Page: intPtr(-1)}, application.ErrInvalidPage, "page"},
+		{"page over the maximum", application.ListTransactionsInput{Page: intPtr(application.MaxPage + 1)}, application.ErrInvalidPage, "page"},
+		{"page that would overflow the offset", application.ListTransactionsInput{Page: intPtr(math.MaxInt), Limit: intPtr(100)}, application.ErrInvalidPage, "page"},
 		{"limit zero", application.ListTransactionsInput{Limit: intPtr(0)}, application.ErrInvalidLimit, "limit"},
 		{"negative limit", application.ListTransactionsInput{Limit: intPtr(-10)}, application.ErrInvalidLimit, "limit"},
 		{"limit over the maximum", application.ListTransactionsInput{Limit: intPtr(application.MaxLimit + 1)}, application.ErrInvalidLimit, "limit"},

@@ -21,6 +21,8 @@ func (Clock) Now() time.Time {
 
 type UUIDGenerator struct{}
 
+// UUID v7 is time ordered: inserts land at the end of the primary key index
+// instead of all over it.
 func (UUIDGenerator) NewID() (uuid.UUID, error) {
 	return uuid.NewV7()
 }

@@ -13,14 +13,19 @@ const (
 	DefaultPage  = 1
 	DefaultLimit = 20
 	MaxLimit     = 100
+	// Deep OFFSET pages are expensive and a huge page number overflowed the
+	// offset, so the page is capped.
+	MaxPage = 100000
 )
 
 var (
-	ErrInvalidPage         = errors.New("page must be greater than or equal to 1")
+	ErrInvalidPage         = fmt.Errorf("page must be between 1 and %d", MaxPage)
 	ErrInvalidLimit        = fmt.Errorf("limit must be between 1 and %d", MaxLimit)
 	ErrInvalidStatusFilter = errors.New("status must be PENDING, EXECUTED, REJECTED or FAILED")
 )
 
+// Page and Limit are pointers to tell not sent (use the default) apart from
+// sent with an invalid value (reject it).
 type ListTransactionsInput struct {
 	AccountID string
 	Status    domain.TransactionStatus
@@ -85,7 +90,7 @@ func buildPagination(input ListTransactionsInput) (ports.Pagination, error) {
 	pagination := ports.Pagination{Page: DefaultPage, Limit: DefaultLimit}
 
 	if input.Page != nil {
-		if *input.Page < 1 {
+		if *input.Page < 1 || *input.Page > MaxPage {
 			return ports.Pagination{}, &domain.ValidationError{Field: "page", Rule: ErrInvalidPage}
 		}
 		pagination.Page = *input.Page

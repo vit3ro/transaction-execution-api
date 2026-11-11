@@ -69,6 +69,9 @@ func NewExecuteTransaction(
 	}
 }
 
+// Execute runs the flow: rules, save PENDING, call the provider, save outcome.
+// Business rules run first so an invalid request never touches the database
+// or the provider.
 func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransactionInput) (ExecuteTransactionResult, error) {
 	transaction, err := uc.newPendingTransaction(input)
 	if err != nil {
@@ -79,6 +82,9 @@ func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransact
 		return ExecuteTransactionResult{Transaction: previous, Replayed: previous != nil}, err
 	}
 
+	// PENDING is saved before calling the provider on purpose: if the service
+	// dies mid-flight there is still a record that we tried to move money. If
+	// this insert fails we return and the provider is never called.
 	if err := uc.repository.Create(ctx, transaction); err != nil {
 		return uc.resolveCreateFailure(ctx, input, err)
 	}
@@ -99,6 +105,8 @@ func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransact
 	return ExecuteTransactionResult{Transaction: transaction}, nil
 }
 
+// Same key and same body returns the original transaction. Same key with a
+// different body is a client mistake, not a retry, so it is an error.
 func (uc *ExecuteTransaction) previousExecution(ctx context.Context, input ExecuteTransactionInput) (*domain.Transaction, error) {
 	if input.IdempotencyKey == "" {
 		return nil, nil
@@ -117,6 +125,8 @@ func (uc *ExecuteTransaction) previousExecution(ctx context.Context, input Execu
 	return previous, nil
 }
 
+// Two requests with the same key can pass the lookup at the same time. The
+// unique index lets only one insert win; the loser returns the winner.
 func (uc *ExecuteTransaction) resolveCreateFailure(ctx context.Context, input ExecuteTransactionInput, createErr error) (ExecuteTransactionResult, error) {
 	if errors.Is(createErr, ports.ErrIdempotencyKeyConflict) {
 		winner, err := uc.previousExecution(ctx, input)
@@ -156,6 +166,8 @@ func (uc *ExecuteTransaction) newPendingTransaction(input ExecuteTransactionInpu
 	})
 }
 
+// A rejection is a valid business answer, not an error. Only a technical
+// failure ends in FAILED, which means we do not know if money moved.
 func (uc *ExecuteTransaction) applyOutcome(ctx context.Context, transaction *domain.Transaction, result ports.ProviderResult, providerErr error) error {
 	now := uc.clock.Now()
 
@@ -172,6 +184,8 @@ func (uc *ExecuteTransaction) applyOutcome(ctx context.Context, transaction *dom
 	}
 }
 
+// The stored message is generic. The real cause goes only to the log so we
+// do not leak internal details to API clients.
 func (uc *ExecuteTransaction) markFailed(ctx context.Context, transaction *domain.Transaction, code string, cause error, at time.Time) error {
 	uc.logger.ErrorContext(ctx, "provider execution failed",
 		"transactionId", transaction.ID,
@@ -181,6 +195,10 @@ func (uc *ExecuteTransaction) markFailed(ctx context.Context, transaction *domai
 	return transaction.MarkFailed(code, failureMessages[code], at)
 }
 
+// The provider already answered, so this write must survive the client
+// hanging up: WithoutCancel drops the cancellation but keeps the request id.
+// If it still fails, money may have moved while the row stays PENDING, so we
+// log everything reconciliation would need.
 func (uc *ExecuteTransaction) persistOutcome(ctx context.Context, transaction *domain.Transaction) error {
 	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outcomePersistTimeout)
 	defer cancel()

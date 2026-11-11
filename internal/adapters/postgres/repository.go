@@ -180,6 +180,8 @@ func balanceAfterParam(transaction *domain.Transaction) *string {
 	return &balance
 }
 
+// Both the primary key and the idempotency key raise a unique violation. The
+// constraint name tells them apart, because only the second one is a replay.
 func mapInsertError(err error, transaction *domain.Transaction) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != uniqueViolationCode {

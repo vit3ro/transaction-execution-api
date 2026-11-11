@@ -21,6 +21,8 @@ const (
 	messageInvalidAmount = "must be a number with at most two decimal places"
 )
 
+// Pointers tell a missing field apart from an empty one. The amount stays as
+// raw JSON so it never becomes a float64.
 type createTransactionRequest struct {
 	AccountID   *string         `json:"accountId"`
 	Type        *string         `json:"type"`
@@ -108,6 +110,8 @@ func invalidFields(fields ...fieldError) *decodeFailure {
 	}
 }
 
+// Reports every invalid field in one response instead of one per request.
+// Only the shape is checked here; business rules belong to the domain.
 func (r createTransactionRequest) toInput() (application.ExecuteTransactionInput, []fieldError) {
 	var fieldErrors []fieldError
 	reject := func(field, message string) {
@@ -190,7 +194,8 @@ func toTransactionResponse(transaction *domain.Transaction) transactionResponse 
 		ProviderTransactionID: transaction.ProviderTransactionID,
 		RejectionCode:         transaction.RejectionCode,
 		RejectionMessage:      transaction.RejectionMessage,
-		CreatedAt:             transaction.CreatedAt.UTC().Format(time.RFC3339),
+		// RFC 3339 in UTC without fractions, as in the challenge example.
+		CreatedAt: transaction.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if transaction.BalanceAfter != nil {
 		balance := json.Number(transaction.BalanceAfter.String())

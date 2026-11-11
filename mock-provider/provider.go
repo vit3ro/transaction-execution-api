@@ -119,6 +119,8 @@ func (p *provider) resolve(ctx context.Context, request executeRequest, amount i
 		return raw("unavailable", http.StatusServiceUnavailable, "text/plain", "service unavailable")
 	case accountGarbage:
 		return raw("garbage", http.StatusOK, "application/json", `{"transactionId":"txn-`)
+	// The slow account still applies the movement after the delay. That is the
+	// real risk behind a timeout and why the API does not retry one.
 	case accountSlow:
 		waitFor(ctx, p.slowDelay)
 		return p.apply("slow", request, amount)
@@ -141,6 +143,8 @@ func (p *provider) apply(scenario string, request executeRequest, amount int64) 
 	})
 }
 
+// Balances live in memory per account so responses are coherent: a credit
+// adds, a debit subtracts, and a debit over the balance is rejected.
 func (p *provider) move(accountID, transactionType string, amount int64) (balance int64, ok bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

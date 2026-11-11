@@ -14,6 +14,8 @@ import (
 
 const migrateDriverScheme = "pgx5"
 
+// Migrations are embedded in the binary. golang-migrate takes a lock in the
+// database, so several replicas starting together do not collide.
 func Migrate(databaseURL string) (err error) {
 	migrateURL, err := toMigrateURL(databaseURL)
 	if err != nil {

@@ -30,6 +30,8 @@ type ProviderResult struct {
 	RejectionMessage string
 }
 
+// A provider rejection comes back as a result, not as an error. An error
+// means a technical failure where the outcome is unknown.
 type ProviderClient interface {
 	Execute(ctx context.Context, request ProviderRequest) (ProviderResult, error)
 }

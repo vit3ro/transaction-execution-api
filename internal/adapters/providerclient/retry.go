@@ -16,6 +16,10 @@ type retryPolicy struct {
 	maxDelay   time.Duration
 }
 
+// The provider contract has no idempotency key, so retrying a request that
+// may have arrived can move money twice. We only retry when the connection
+// was never established (dial error): nothing was sent. Read timeouts, resets
+// and 5XX are not retried because the provider may have executed it.
 func isSafeToRetry(err error) bool {
 	var opErr *net.OpError
 	return errors.As(err, &opErr) && opErr.Op == dialOperation
@@ -25,6 +29,8 @@ func (p retryPolicy) allows(attempt int, err error) bool {
 	return attempt < p.maxRetries && isSafeToRetry(err)
 }
 
+// Exponential backoff with full jitter, so many instances do not retry in
+// lockstep against a provider that is already struggling.
 func (p retryPolicy) backoff(attempt int) time.Duration {
 	ceiling := p.baseDelay << attempt
 	if ceiling <= 0 || ceiling > p.maxDelay {
