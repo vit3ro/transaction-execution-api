@@ -64,7 +64,7 @@ Content-Type: application/json
   "currency": "MXN"
 }
 
-### Provider 503 without valid body -> 503 FAILED
+### Provider 503 without valid body -> 502 FAILED
 POST {{api}}/transactions
 Content-Type: application/json
 
@@ -75,7 +75,7 @@ Content-Type: application/json
   "currency": "MXN"
 }
 
-### Provider 200 with invalid JSON -> 503 FAILED
+### Provider 200 with invalid JSON -> 502 FAILED
 POST {{api}}/transactions
 Content-Type: application/json
 

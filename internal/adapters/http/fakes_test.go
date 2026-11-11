@@ -16,6 +16,7 @@ import (
 	httpapi "github.com/vit3ro/transaction-execution-api/internal/adapters/http"
 	"github.com/vit3ro/transaction-execution-api/internal/application"
 	"github.com/vit3ro/transaction-execution-api/internal/domain"
+	"github.com/vit3ro/transaction-execution-api/internal/logging"
 )
 
 const validBody = `{"accountId":"acc-123456","type":"CREDIT","amount":1500.00,"currency":"MXN","description":"Transferencia recibida"}`
@@ -68,7 +69,7 @@ func newRouterWithLister(f *fixture, lister httpapi.TransactionLister) http.Hand
 		Executor:       f.executor,
 		Lister:         lister,
 		Readiness:      fakeReadiness{},
-		Logger:         slog.New(slog.NewJSONHandler(f.logs, nil)),
+		Logger:         logging.New(f.logs, slog.LevelInfo),
 		RequestTimeout: f.requestTimeout,
 	})
 }
@@ -85,7 +86,7 @@ func newFixtureWith(readiness httpapi.ReadinessChecker, requestTimeout time.Dura
 		Executor:       executor,
 		Lister:         lister,
 		Readiness:      readiness,
-		Logger:         slog.New(slog.NewJSONHandler(logs, nil)),
+		Logger:         logging.New(logs, slog.LevelInfo),
 		RequestTimeout: requestTimeout,
 	})
 	return &fixture{executor: executor, lister: lister, logs: logs, router: router, requestTimeout: requestTimeout}

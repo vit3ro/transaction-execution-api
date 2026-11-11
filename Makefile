@@ -3,6 +3,11 @@ COVERAGE_FILE := coverage.out
 
 TEST_DATABASE_URL ?= postgres://transactions:transactions@localhost:5432/transactions?sslmode=disable
 
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 .PHONY: run run-mock build test test-cover test-integration lint fmt up down
 
 run:

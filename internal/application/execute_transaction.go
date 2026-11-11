@@ -26,8 +26,8 @@ var (
 
 var failureMessages = map[string]string{
 	FailureCodeProviderTimeout:         "the provider did not respond in time",
-	FailureCodeProviderUnavailable:     "the provider could not be reached or returned an invalid response",
-	FailureCodeProviderInvalidResponse: "the provider returned an unexpected status",
+	FailureCodeProviderUnavailable:     "the provider could not be reached",
+	FailureCodeProviderInvalidResponse: "the provider returned a response outside the contract",
 }
 
 type ExecuteTransactionInput struct {
@@ -90,7 +90,7 @@ func (uc *ExecuteTransaction) Execute(ctx context.Context, input ExecuteTransact
 		Currency:  transaction.Currency,
 	})
 
-	if err := uc.applyOutcome(transaction, result, providerErr); err != nil {
+	if err := uc.applyOutcome(ctx, transaction, result, providerErr); err != nil {
 		return ExecuteTransactionResult{}, err
 	}
 	if err := uc.persistOutcome(ctx, transaction); err != nil {
@@ -156,24 +156,24 @@ func (uc *ExecuteTransaction) newPendingTransaction(input ExecuteTransactionInpu
 	})
 }
 
-func (uc *ExecuteTransaction) applyOutcome(transaction *domain.Transaction, result ports.ProviderResult, providerErr error) error {
+func (uc *ExecuteTransaction) applyOutcome(ctx context.Context, transaction *domain.Transaction, result ports.ProviderResult, providerErr error) error {
 	now := uc.clock.Now()
 
 	switch {
 	case providerErr != nil:
-		return uc.markFailed(transaction, failureCodeFor(providerErr), providerErr, now)
+		return uc.markFailed(ctx, transaction, failureCodeFor(providerErr), providerErr, now)
 	case result.Status == ports.ProviderStatusApproved:
 		return transaction.MarkExecuted(result.TransactionID, result.Balance, now)
 	case result.Status == ports.ProviderStatusRejected:
 		return transaction.MarkRejected(result.RejectionCode, result.RejectionMessage, now)
 	default:
 		cause := fmt.Errorf("unexpected provider status %q", result.Status)
-		return uc.markFailed(transaction, FailureCodeProviderInvalidResponse, cause, now)
+		return uc.markFailed(ctx, transaction, FailureCodeProviderInvalidResponse, cause, now)
 	}
 }
 
-func (uc *ExecuteTransaction) markFailed(transaction *domain.Transaction, code string, cause error, at time.Time) error {
-	uc.logger.Error("provider execution failed",
+func (uc *ExecuteTransaction) markFailed(ctx context.Context, transaction *domain.Transaction, code string, cause error, at time.Time) error {
+	uc.logger.ErrorContext(ctx, "provider execution failed",
 		"transactionId", transaction.ID,
 		"failureCode", code,
 		"error", cause,
@@ -186,7 +186,7 @@ func (uc *ExecuteTransaction) persistOutcome(ctx context.Context, transaction *d
 	defer cancel()
 
 	if err := uc.repository.Update(persistCtx, transaction); err != nil {
-		uc.logger.Error("transaction outcome not persisted, reconciliation required",
+		uc.logger.ErrorContext(ctx, "transaction outcome not persisted, reconciliation required",
 			"transactionId", transaction.ID,
 			"status", transaction.Status,
 			"providerTransactionId", transaction.ProviderTransactionID,
@@ -198,8 +198,12 @@ func (uc *ExecuteTransaction) persistOutcome(ctx context.Context, transaction *d
 }
 
 func failureCodeFor(providerErr error) string {
-	if errors.Is(providerErr, context.DeadlineExceeded) {
+	switch {
+	case errors.Is(providerErr, context.DeadlineExceeded):
 		return FailureCodeProviderTimeout
+	case errors.Is(providerErr, ports.ErrProviderInvalidResponse):
+		return FailureCodeProviderInvalidResponse
+	default:
+		return FailureCodeProviderUnavailable
 	}
-	return FailureCodeProviderUnavailable
 }

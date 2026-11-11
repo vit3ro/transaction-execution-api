@@ -3,6 +3,8 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/vit3ro/transaction-execution-api/internal/logging"
 )
 
 const (
@@ -49,7 +51,7 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, deta
 		Code:      code,
 		Detail:    detail,
 		Errors:    fieldErrors,
-		RequestID: requestIDFrom(r.Context()),
+		RequestID: logging.RequestID(r.Context()),
 	})
 }
 

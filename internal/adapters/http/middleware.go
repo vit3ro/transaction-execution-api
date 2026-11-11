@@ -8,19 +8,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/vit3ro/transaction-execution-api/internal/logging"
 )
 
 const (
 	headerRequestID    = "X-Request-ID"
 	maxRequestIDLength = 128
 )
-
-type requestIDKey struct{}
-
-func requestIDFrom(ctx context.Context) string {
-	requestID, _ := ctx.Value(requestIDKey{}).(string)
-	return requestID
-}
 
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +24,7 @@ func withRequestID(next http.Handler) http.Handler {
 			requestID = uuid.NewString()
 		}
 		w.Header().Set(headerRequestID, requestID)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID)))
+		next.ServeHTTP(w, r.WithContext(logging.WithRequestID(r.Context(), requestID)))
 	})
 }
 
@@ -69,7 +64,6 @@ func withLogging(logger *slog.Logger) func(http.Handler) http.Handler {
 				level = slog.LevelError
 			}
 			logger.Log(r.Context(), level, "http request",
-				"requestId", requestIDFrom(r.Context()),
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", recorder.status,
@@ -91,7 +85,6 @@ func withRecovery(logger *slog.Logger) func(http.Handler) http.Handler {
 					panic(recovered)
 				}
 				logger.ErrorContext(r.Context(), "panic recovered",
-					"requestId", requestIDFrom(r.Context()),
 					"method", r.Method,
 					"path", r.URL.Path,
 					"panic", recovered,

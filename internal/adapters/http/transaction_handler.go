@@ -159,7 +159,6 @@ func classifyValidationError(err *domain.ValidationError) (status int, code stri
 
 func (h *transactionHandler) logFailure(r *http.Request, level slog.Level, message string, err error) {
 	h.logger.Log(r.Context(), level, message,
-		"requestId", requestIDFrom(r.Context()),
 		"method", r.Method,
 		"path", r.URL.Path,
 		"error", err,

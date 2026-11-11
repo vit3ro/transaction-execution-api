@@ -149,6 +149,11 @@ func TestExecuteTransaction_ProviderFailures(t *testing.T) {
 			wantCode: application.FailureCodeProviderUnavailable,
 		},
 		{
+			name:     "response outside the contract",
+			err:      fmt.Errorf("%w: http status 503", ports.ErrProviderInvalidResponse),
+			wantCode: application.FailureCodeProviderInvalidResponse,
+		},
+		{
 			name:     "response with unknown status",
 			result:   ports.ProviderResult{Status: "UNKNOWN"},
 			wantCode: application.FailureCodeProviderInvalidResponse,

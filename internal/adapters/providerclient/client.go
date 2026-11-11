@@ -81,7 +81,7 @@ func (c *Client) sendWithRetry(ctx context.Context, payload []byte) (ports.Provi
 			return result, err
 		}
 
-		c.logger.Warn("retrying provider request after connection failure",
+		c.logger.WarnContext(ctx, "retrying provider request after connection failure",
 			"retry", attempt+1,
 			"maxRetries", c.retry.maxRetries,
 			"error", err,

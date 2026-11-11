@@ -7,12 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vit3ro/transaction-execution-api/internal/adapters/postgres"
@@ -20,10 +18,7 @@ import (
 	"github.com/vit3ro/transaction-execution-api/internal/ports"
 )
 
-const (
-	databaseURLEnv = "TEST_DATABASE_URL"
-	migrationsDir  = "../../../migrations"
-)
+const databaseURLEnv = "TEST_DATABASE_URL"
 
 var (
 	testPool *pgxpool.Pool
@@ -51,30 +46,19 @@ func runTests(m *testing.M) int {
 	}
 	defer pool.Close()
 
-	migrations := []string{
-		"000002_add_idempotency_key.down.sql",
-		"000001_create_transactions.down.sql",
-		"000001_create_transactions.up.sql",
-		"000002_add_idempotency_key.up.sql",
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS transactions, schema_migrations"); err != nil {
+		fmt.Fprintf(os.Stderr, "reset test database: %v\n", err)
+		return 1
 	}
-	for _, migration := range migrations {
-		if err := applyMigration(ctx, pool, migration); err != nil {
-			fmt.Fprintf(os.Stderr, "apply %s: %v\n", migration, err)
+	for range 2 {
+		if err := postgres.Migrate(databaseURL); err != nil {
+			fmt.Fprintf(os.Stderr, "apply migrations: %v\n", err)
 			return 1
 		}
 	}
 
 	testPool = pool
 	return m.Run()
-}
-
-func applyMigration(ctx context.Context, pool *pgxpool.Pool, name string) error {
-	statements, err := os.ReadFile(filepath.Join(migrationsDir, name))
-	if err != nil {
-		return err
-	}
-	_, err = pool.Exec(ctx, string(statements), pgx.QueryExecModeSimpleProtocol)
-	return err
 }
 
 func newRepository(t *testing.T) *postgres.Repository {
